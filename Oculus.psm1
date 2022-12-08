@@ -148,7 +148,7 @@ function Get-HostDiscovery{
     process {
         foreach($ip in $IPs){
             $counter++
-            $result = Test-NetConnection -ComputerName $ip -InformationLevel Quiet -WarningAction SilentlyContinue
+            $result = Test-Connection -ComputerName $ip -Quiet 
             if ($result -eq "True"){
                 $status = "Up"
             }else {
