@@ -59,7 +59,7 @@ function Get-TargetEnumeration{
                     $iplist +=$($netadd) + $($r1)
                 }
             }
-            elseif ($ip.IndexOf(',') -ne -1){#list
+            elseif ($ip.IndexOf(',') -ne -1){#ENUM
                 $netadd = $ip.substring(0,12)
                 $x = ($ip.substring($ip.LastIndexOf('.') +1)).split(',')
                 foreach($i in $x){
@@ -143,7 +143,7 @@ function Get-HostDiscovery{
         $ipdown
         $counter
 
-    }
+    } 
     
     process {
         foreach($ip in $IPs){
@@ -184,7 +184,7 @@ function Get-HostDiscovery{
     }
 }
 
-function Get-ConnectScan{
+function Get-TCPConnectScan{
     <#
     .SYNOPSIS
         Returns a list of open ports on each scanned host.
@@ -243,10 +243,10 @@ function Get-ConnectScan{
         [Parameter(Position = 0, ValueFromPipeline=$true, Mandatory = $true)]
         $Target, 
 
-        [Parameter(Position = 0, Mandatory = $true)]  
+        [Parameter(Position = 1, Mandatory = $true)]  
         $Port,
 
-        [Parameter(Position = 0, Mandatory = $false)]
+        [Parameter(Position = 1, Mandatory = $false)]
         [Int32]$TopXPorts,
 
         [Parameter(Position = 2, Mandatory = $false)]
