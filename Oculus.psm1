@@ -139,7 +139,7 @@ function Get-HostDiscovery{
         $date=Get-Date
         "Starting HostDiscovery at $date "
         $FinalResult = @()
-        $IPs = Get-TargetEnumeration $Target
+        $IPs = Get-TargetEnumeration $Target #creating list of IP addresses
         $ipdown
         $counter
 
@@ -148,7 +148,7 @@ function Get-HostDiscovery{
     process {
         foreach($ip in $IPs){
             $counter++
-            $result = Test-Connection -ComputerName $ip -Quiet 
+            $result = Test-Connection -ComputerName $ip -Quiet #pinging IP address
             if ($result -eq "True"){
                 $status = "Up"
             }else {
@@ -156,7 +156,7 @@ function Get-HostDiscovery{
                 continue
             } 
     
-            $FinalResult += New-Object psobject -Property ([ordered]@{
+            $FinalResult += New-Object psobject -Property ([ordered]@{ #creating output table
                 'Host' = $ip
                 'Status' = $status
             })
@@ -167,7 +167,7 @@ function Get-HostDiscovery{
         if($null -eq $ipdown){
             "`nNo hosts are down or filtered.`n" 
         }else{
-            "`n$ipdown host are down or filtered.`n"
+            "`n$ipdown hosts are down or filtered.`n"
         }
         Write-Output $FinalResult `n
         "Scanning done: " + $counter + " IP addresses scanned."
@@ -243,7 +243,7 @@ function Get-TCPConnectScan{
         [Parameter(Position = 0, ValueFromPipeline=$true, Mandatory = $true)]
         $Target, 
 
-        [Parameter(Position = 1, Mandatory = $true)]  
+        [Parameter(Position = 1, Mandatory = $false)]  
         $Port,
 
         [Parameter(Position = 1, Mandatory = $false)]
@@ -268,7 +268,7 @@ function Get-TCPConnectScan{
         $FinalResult = @()
         $ipdown
         $counter
-        $IPs = Get-TargetEnumeration $Target
+        $IPs = Get-TargetEnumeration $Target #creating list of IP addresses
     }
 
     process {
@@ -277,7 +277,7 @@ function Get-TCPConnectScan{
                 $counter++
                 for ($i=0; $i -lt $TopXPorts; $i++){
                     
-                    $result = Test-NetConnection -ComputerName $ip -Port $Top1000Ports[$i] -InformationLevel Quiet -WarningAction SilentlyContinue
+                    $result = Test-NetConnection -ComputerName $ip -Port $Top1000Ports[$i] -InformationLevel Quiet -WarningAction SilentlyContinue #trying TCP connection
 
                     if ($result -eq "True"){
                         $status = "Open"
@@ -286,7 +286,7 @@ function Get-TCPConnectScan{
                         continue
                     } 
 
-                    $FinalResult+= New-Object psobject -Property ([ordered]@{
+                    $FinalResult+= New-Object psobject -Property ([ordered]@{ #creating output table
                         'Host' = $ip
                         'Port' = $Top1000Ports[$i]
                         'Status' = $status
@@ -299,7 +299,7 @@ function Get-TCPConnectScan{
                 $counter++
                 foreach($num in $Port){
 
-                    $result = Test-NetConnection -ComputerName $ip -Port $num -InformationLevel Quiet -WarningAction SilentlyContinue
+                    $result = Test-NetConnection -ComputerName $ip -Port $num -InformationLevel Quiet -WarningAction SilentlyContinue #trying TCP connection
 
                     if ($result -eq "True"){
                         $status = "Open"
@@ -308,7 +308,7 @@ function Get-TCPConnectScan{
                         continue
                     } 
 
-                    $FinalResult += New-Object psobject -Property ([ordered]@{
+                    $FinalResult += New-Object psobject -Property ([ordered]@{ #creating output table
                         'Host' = $ip
                         'Port' = $num
                         'Status' = $status
@@ -323,7 +323,7 @@ function Get-TCPConnectScan{
         if($null -eq $ipdown){
             "`nNo ports are down or filtered.`n" 
         }else{
-            "`n$ipdown host are down or filtered.`n"
+            "`n$ipdown ports are closed or filtered.`n"
         }
         Write-Output $FinalResult `n
         "Scanning done: " + $counter + " IP addresses scanned."
