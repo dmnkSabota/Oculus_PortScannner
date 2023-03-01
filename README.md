@@ -7,7 +7,7 @@ Spustíme PowerShell ako administrátor.
 
 Nastavenie pravidiel inštalácie externých modulov ()
 ```
-Set-ExecutionPolicy -ExecutionPolicy RemoteSigned
+Set-ExecutionPolicy -ExecutionPolicy Bypass -Scope Process
 ```
 
 Následne sme schopný importovať modul do PowerShell-u.
@@ -16,13 +16,13 @@ Následne sme schopný importovať modul do PowerShell-u.
 ```
 $Env:PSModulePath
 ```
-2. Pridáme cestu k stiahnutej zložke obsahujúcej modul.
+2. Pridáme cestu k stiahnutej zložke obsahujúcej modul (složku modulu).
 ```
-$Env:PSModulePath + "<path>"
+$Env:PSModulePath += ";<path>"
 ```
 3. Načítame modul na použitie do PowerShell-u.
 ```
-Import-Module -Name <path> -Verbose
+Import-Module -Name Oculus -Verbose
 ```
 
 ## Použitie
