@@ -100,16 +100,16 @@ function Get-HostDiscovery{
         Specifies that the result will be written to .xml file and path to where the file will be created.
     
     .EXAMPLE
-         Get-HostDiscovery -Target 1.1.1.0/26
+        Get-HostDiscovery -Target 1.1.1.0/26
 
     .EXAMPLE
-         Get-HostDiscovery -Target 1.1.1.'1,2,5,9' 
+        Get-HostDiscovery -Target 1.1.1.'1,2,5,9' 
          
     .EXAMPLE
-         Get-HostDiscovery -Target 1.1.1.1-125 -OutXml "C:\Desktop"  
+        Get-HostDiscovery -Target 1.1.1.1-125 -OutXml "C:\Desktop"  
 
     .EXAMPLE
-         Get-HostDiscovery -Target 1.1.1.35, 1.1.1.5   
+        Get-HostDiscovery -Target 1.1.1.35, 1.1.1.5   
     
     .INPUTS
         System.String
@@ -339,4 +339,86 @@ function Get-TCPConnectScan{
         }
     }
               
+}
+
+function Get-SYNScan {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory, ValueFromPipeline)]
+        [string[]]$ComputerName,
+	  
+        [Parameter(Mandatory)]
+        [ValidateRange(1,65535)]
+        [int[]]$Port,
+
+        [int]$Timeout = 1000
+    )
+
+    begin {
+        $results = @()
+    }
+
+    process {
+        foreach ($computer in $ComputerName) {
+            try {
+                $ipAddress = [System.Net.Dns]::GetHostAddresses($computer) | Where-Object {$_.AddressFamily -eq "InterNetwork"} | Select-Object -First 1
+                foreach ($p in $Port) {
+                    $endPoint = New-Object System.Net.IPEndPoint $ipAddress, $p
+                    $socket = New-Object System.Net.Sockets.Socket([System.Net.Sockets.AddressFamily]::InterNetwork, [System.Net.Sockets.SocketType]::Stream, [System.Net.Sockets.ProtocolType]::Tcp)
+                    $socket.ReceiveTimeout = $Timeout
+
+                    try {
+                        $socket.Connect($endPoint)
+
+                        # Create a custom SYN packet
+                        $synPacket = [byte[]]@(0x53, 0x59, 0x4E, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x70, 0x02, 0xFF, 0xFF, 0x00, 0x00, 0x02, 0x04, 0x05, 0xB4, 0x04, 0x02, 0x08, 0x0A, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x03, 0x03, 0x07)
+
+                        # Send the packet asynchronously
+                        $socket.Send($synPacket)
+
+                        # Wait for the response
+                        $bytes = New-Object byte[] 1024
+                        $received = $socket.Receive($bytes, 0, $bytes.Length, [System.Net.Sockets.SocketFlags]::None)
+
+                        if ($received -gt 0) {
+                            $result = [pscustomobject]@{
+                                ComputerName = $computer
+                                Port = $p
+                                Protocol = "TCP"
+                                State = "Open"
+                            }
+                        }
+                        else {
+                            $result = [pscustomobject]@{
+                                ComputerName = $computer
+                                Port = $p
+                                Protocol = "TCP"
+                                State = "Closed"
+                            }
+                        }
+
+                        $results += $result
+                        $socket.Shutdown([System.Net.Sockets.SocketShutdown]::Both)
+                        $socket.Close()
+                    }
+                    catch {
+                        $result = [pscustomobject]@{
+                            ComputerName = $computer
+                            Port = $p
+                            Protocol = "TCP"
+                            State = "Filtered"
+                        }
+                        $results += $result
+                    }
+                }
+            }
+            catch {
+                Write-Warning "Unable to resolve hostname '$computer'"
+            }
+        }
+    }
+
+    end {
+        $results | Sort-Object ComputerName, Port | Format-Table -AutoSize
+    }
 }
