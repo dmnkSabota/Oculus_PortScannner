@@ -183,6 +183,9 @@ function Get-HostDiscovery{
         $Target,
 
         [Parameter(Position = 2, Mandatory = $false)]
+        [string]$OutputAll,
+        
+        [Parameter(Position = 2, Mandatory = $false)]
         [string]$OutTxt,
 
         [Parameter(Position = 2, Mandatory = $false)]
@@ -229,6 +232,10 @@ function Get-HostDiscovery{
         Write-Output $FinalResult `n
         "Scanning done: " + $counter + " IP addresses scanned."
 
+        if($PSBoundParameters.ContainsKey("OutputAll")){
+            $FinalResult | Out-File -Path $OutputAll -Encoding UTF8; $FinalResult | Export-Csv -Path $OutputAll-Encoding UTF8 -NoTypeInformation; $FinalResult | Export-Clixml -Path $OutputAll
+        }
+            
         if($PSBoundParameters.ContainsKey("OutTxt")) {
             $FinalResult | Out-File $OutTxt
         }
@@ -307,6 +314,9 @@ function Get-TCPConnectScan{
         [Int32]$TopXPorts,
 
         [Parameter(Position = 2, Mandatory = $false)]
+        [string]$OutputAll,
+        
+        [Parameter(Position = 2, Mandatory = $false)]
         [string]$OutTxt,
 
         [Parameter(Position = 2, Mandatory = $false)]
@@ -325,9 +335,8 @@ function Get-TCPConnectScan{
         $counter
         $IPs = Get-TargetEnumeration $Target #creating list of IP addresses
         if($PSBoundParameters.ContainsKey("TopXPorts")) {
-            $Port = Get-TopXPorts
+            $Port = Get-TopXPorts - TopXPorts $TopXPorts
         }
-
     }
 
     process {
@@ -363,6 +372,10 @@ function Get-TCPConnectScan{
         Write-Output $FinalResult `n
         "Scanning done: " + $counter + " IP addresses scanned."
 
+        if($PSBoundParameters.ContainsKey("OutputAll")){
+            $FinalResult | Out-File -Path $OutputAll -Encoding UTF8; $FinalResult | Export-Csv -Path $OutputAll-Encoding UTF8 -NoTypeInformation; $FinalResult | Export-Clixml -Path $OutputAll
+        }
+            
         if($PSBoundParameters.ContainsKey("OutTxt")) {
             $FinalResult | Out-File $OutTxt
         }
@@ -386,10 +399,31 @@ function Get-SYNScan {
         [ValidateRange(1,65535)]
         [int[]]$Port,
 
+        [Parameter(Position = 1, Mandatory = $false)]
+        [Int32]$TopXPorts,
+
+        [Parameter(Position = 2, Mandatory = $false)]
+        [string]$OutputAll,
+        
+        [Parameter(Position = 2, Mandatory = $false)]
+        [string]$OutTxt,
+
+        [Parameter(Position = 2, Mandatory = $false)]
+        [string]$OutCsv,
+
+        [Parameter(Position = 2, Mandatory = $false)]
+        [string]$OutXml,
+
         [int]$Timeout = 1000
+
     )
 
-     
+    begin {
+        if($PSBoundParameters.ContainsKey("TopXPorts")) {
+            $Port = Get-TopXPorts - TopXPorts $TopXPorts
+        }
+
+    }
 
     process {
         foreach ($computer in $ComputerName) {
@@ -453,5 +487,19 @@ function Get-SYNScan {
 
     end {
         $results | Sort-Object ComputerName, Port | Format-Table -AutoSize
+
+        if($PSBoundParameters.ContainsKey("OutputAll")){
+            $results | Out-File -Path $OutputAll -Encoding UTF8; $FinalResult | Export-Csv -Path $OutputAll-Encoding UTF8 -NoTypeInformation; $FinalResult | Export-Clixml -Path $OutputAll
+        }
+            
+        if($PSBoundParameters.ContainsKey("OutTxt")) {
+            $results | Out-File $OutTxt
+        }
+        if($PSBoundParameters.ContainsKey("OutCsv")) {
+            $results | Export-Csv -Path $OutCsv
+        }
+        if($PSBoundParameters.ContainsKey("OutXml")) {
+            $results | Export-Clixml -Path $OutXml
+        }
     }
 }
