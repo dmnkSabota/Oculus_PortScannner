@@ -134,6 +134,78 @@ function Get-TopXPorts {
 
 }
 
+function Get-OSInfo {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true, Position = 0)]
+        [string]$Target
+    )
+
+    $osList = @()
+
+    $jobs = @(
+        Start-Job -ScriptBlock {
+            param($Target)
+            try {
+                $SMBInfo = (Get-SmbConnection -CimSession (New-CimSession -ComputerName $Target -SessionOption (New-CimSessionOption -Protocol Dcom) -ErrorAction Stop) -ErrorAction Stop).ServerName
+                if ($SMBInfo) {
+                    return "$($SMBInfo.OperatingSystem) | $($SMBInfo.Version)"
+                }
+            } catch {}
+        } -ArgumentList $Target
+
+        Start-Job -ScriptBlock {
+            param($Target)
+            try {
+                $HTTPHeader = (Invoke-WebRequest -Uri "http://$Target" -TimeoutSec 5 -UseBasicParsing -ErrorAction Stop).Headers["Server"]
+                if ($HTTPHeader) {
+                    return [regex]::Match($HTTPHeader, '\((.*?)\)').Groups[1].Value
+                }
+            } catch {}
+        } -ArgumentList $Target
+
+        Start-Job -ScriptBlock {
+            param($Target)
+            try {
+                $DNSTXT = (Resolve-DnsName -Name $Target -Type TXT -ErrorAction Stop).Strings
+                if ($DNSTXT) {
+                    return "$($DNSTXT -join ' | ')"
+                }
+            } catch {}
+        } -ArgumentList $Target
+
+        Start-Job -ScriptBlock {
+            param($Target, $commonPorts)
+            if ((Test-NetConnection -ComputerName $Target -Port $port -WarningAction SilentlyContinue).TcpTestSucceeded) {
+                return $port
+            }
+            return $null
+
+            if ($detectedPorts) {
+                $osEstimations = @{}
+                foreach ($os in $commonPorts.Keys) {
+                    $osEstimations[$os] = ($commonPorts[$os] | Where-Object { $detectedPorts -contains $_ }).Count
+                }
+                $detectedOS = $osEstimations.Keys | Sort-Object { $osEstimations[$_] } -Descending | Select-Object -First 1
+                return $detectedOS
+            }
+        } -ArgumentList $Target, $commonPorts
+    )
+
+    $results = Receive-Job -Job $jobs -Wait -AutoRemoveJob
+    foreach ($result in $results) {
+        if ($result -ne $null) {
+            $osList += $result
+        }
+    }
+
+    if ($osList.Count -gt 0) {
+        return ($osList -join ' | ')
+    }
+
+    return "Unknown"
+}
+
    
 function Get-HostDiscovery{
     <#
@@ -182,6 +254,9 @@ function Get-HostDiscovery{
         [Parameter(Position = 0, ValueFromPipeline=$true, Mandatory = $true)]
         $Target,
 
+        [Parameter(Position = 1, Mandatory = $false)]
+        [switch]$OS,
+
         [Parameter(Position = 2, Mandatory = $false)]
         [string]$OutputAll,
         
@@ -202,6 +277,9 @@ function Get-HostDiscovery{
         $IPs = Get-TargetEnumeration $Target #creating list of IP addresses
         $ipdown
         $counter
+        if($PSBoundParameters.ContainsKey(" OS")) {
+            $Port = Get-TopXPorts - TopXPorts $TopXPorts
+        }
 
     } 
     
