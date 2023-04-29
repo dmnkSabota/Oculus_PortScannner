@@ -481,9 +481,6 @@ function Get-HostDiscovery{
         $IPs = Get-TargetEnumeration $Target #creating list of IP addresses
         $ipdown
         $counter
-        if($PSBoundParameters.ContainsKey(" OS")) {
-            $Port = Get-TopXPorts - TopXPorts $TopXPorts
-        }
 
     } 
     
@@ -530,7 +527,7 @@ function Get-HostDiscovery{
     }
 }
 
-function Get-TCPConnectScan{
+function Get-ConnectScan{
     <#
     .SYNOPSIS
         Returns a list of open ports on each scanned host.
@@ -585,7 +582,6 @@ function Get-TCPConnectScan{
     #>
     [CmdletBinding()]
     param (
-        
         [Parameter(Position = 0, ValueFromPipeline=$true, Mandatory = $true)]
         $Target, 
 
@@ -593,32 +589,34 @@ function Get-TCPConnectScan{
         [ValidateRange(1,65535)]
         [int[]]$Port,
 
-        [Parameter(Position = 1, Mandatory = $false)]
+        [Parameter(Position = 2, Mandatory = $false)]
         [Int32]$TopXPorts,
 
-        [Parameter(Position = 2, Mandatory = $false)]
+        [Parameter(Position = 3, Mandatory = $false)]
         [switch]$OSDet,
 
-        [Parameter(Position = 3, Mandatory = $false)]
+        [Parameter(Position = 4, Mandatory = $false)]
+        [Int32]$Threads = 5,
+
+        [Parameter(Position = 5, Mandatory = $false)]
+        [switch]$TraceRoute = $false,
+
+        [Parameter(Position = 6, Mandatory = $false)]
         [string]$OutputAll,
-        
-        [Parameter(Position = 3, Mandatory = $false)]
+
+        [Parameter(Position = 7, Mandatory = $false)]
         [string]$OutTxt,
 
-        [Parameter(Position = 3, Mandatory = $false)]
+        [Parameter(Position = 8, Mandatory = $false)]
         [string]$OutCsv,
 
-        [Parameter(Position = 3, Mandatory = $false)]
+        [Parameter(Position = 9, Mandatory = $false)]
         [string]$OutXml
-
     )
 
     begin {
         $date = Get-Date
         "Starting TCP Connection Scan at $date"
-        $FinalResult = @()
-        $ipdown = 0
-        $counter = 0
         $IPs = Get-TargetEnumeration $Target
         if ($PSBoundParameters.ContainsKey("TopXPorts")) {
             $Port = Get-TopXPorts -TopXPorts $TopXPorts
@@ -626,89 +624,209 @@ function Get-TCPConnectScan{
     }
     
     process {
+        $jobs = @()
         foreach ($ip in $IPs) {
-            $counter++
-            $ipResult = @()
-            if ($PSBoundParameters.ContainsKey("OSDet")) {
-                $OS = Get-OSInfo -Target $ip
+            while ($jobs.Count -ge $Threads) {
+                $completedJob = Receive-Job -Job $jobs -Wait -AutoRemoveJob
+                $completedJob
+                $jobs = $jobs | Where-Object { $_.State -ne 'Completed' }
             }
     
             $portJobs = @()
+            $traceJob = $null
+            if ($TraceRoute) {
+                $traceJob = Start-Job -ScriptBlock {
+                    param($ip)
+                    $TraceResult = Test-NetConnection -ComputerName $ip -TraceRoute
+                    $traceRoute = $TraceResult.TraceRoute | Where-Object { $_.ToString() -ne '::' } | ForEach-Object { $_.ToString() }
+                    $traceString = $traceRoute -join ' -> '
+                    return $traceString
+                } -ArgumentList $ip
+            }
+                        
+    
             foreach ($num in $Port) {
-                $service = Get-ServiceByPort -Port $num
                 $portJobs += Start-Job -ScriptBlock {
-                    param($ip, $num, $service)
+                    param($ip, $num)
     
                     $result = Test-NetConnection -ComputerName $ip -Port $num -InformationLevel Quiet -WarningAction SilentlyContinue
-                    if ($result -eq "True") {
+                    if ($result) {
                         $status = "Open"
                     } else {
-                        continue
+                        return
                     }
     
-                    return @{
+                    @{
                         'Port' = $num
                         'Status' = $status
-                        'Service' = $service
                     }
-                } -ArgumentList $ip, $num, $service
+                } -ArgumentList $ip, $num
             }
     
             $portResults = Receive-Job -Job $portJobs -Wait -AutoRemoveJob
+            if ($TraceRoute) {
+                $Trace = Receive-Job -Job $traceJob -Wait    
+            }
+
+            $OS = $null
+            if ($OSDet) {
+                $OS = @()
+                $commonPorts = @{
+                    'Linux/Unix/BSD' = @(22, 25, 80, 443, 3306, 5432, 548, 631, 8000);
+                    'Windows' = @(80, 443, 445, 3389, 1433);
+                }
+            
+                $OSjobs = @(
+                    # Check for SMB information
+                    Start-Job -ScriptBlock {
+                        param($ip)
+                        try {
+                            $SMBInfo = (Get-SmbConnection -CimSession (New-CimSession -ComputerName $ip -SessionOption (New-CimSessionOption -Protocol Dcom) -ErrorAction Stop) -ErrorAction Stop).ServerName
+                            if ($SMBInfo) {
+                                return "$($SMBInfo.OperatingSystem) | $($SMBInfo.Version)"
+                            }
+                        } catch {}
+                    } -ArgumentList $ip
+            
+                    # Check for HTTP header information
+                    Start-Job -ScriptBlock {
+                        param($ip)
+                        try {
+                            $HTTPHeader = (Invoke-WebRequest -Uri "http://$ip" -TimeoutSec 5 -UseBasicParsing -ErrorAction Stop).Headers["Server"]
+                            if ($HTTPHeader) {
+                                return [regex]::Match($HTTPHeader, '\((.*?)\)').Groups[1].Value
+                            }
+                        } catch {}
+                    } -ArgumentList $ip
+            
+                    # Check for DNS TXT records
+                    Start-Job -ScriptBlock {
+                        param($ip)
+                        try {
+                            $DNSTXT = (Resolve-DnsName -Name $ip -Type TXT -ErrorAction Stop).Strings
+                            if ($DNSTXT) {
+                                return "$($DNSTXT -join ' | ')"
+                            }
+                        } catch {}
+                    } -ArgumentList $ip
+            
+                    # Check for common ports
+                    Start-Job -ScriptBlock {
+                        param($ip, $commonPorts)
+                    
+                        $portJobs = @()
+                    
+                        $allPorts = $commonPorts.Values | ForEach-Object { $_ } | Sort-Object -Unique
+                        foreach ($port in $allPorts) {
+                            $portJobs += Start-Job -ScriptBlock {
+                                param($ip, $port)
+                                if ((Test-NetConnection -ComputerName $ip -Port $port -WarningAction SilentlyContinue).TcpTestSucceeded) {
+                                    return $port
+                                }
+                            } -ArgumentList $ip, $port
+                        }
+                    
+                        $detectedPorts = Receive-Job -Job $portJobs -Wait -AutoRemoveJob
+                    
+                        if ($detectedPorts) {
+                            $osEstimations = @{}
+                            foreach ($os in $commonPorts.Keys) {
+                                $osEstimations[$os] = ($commonPorts[$os] | Where-Object { $detectedPorts -contains $_ }).Count
+                            }
+                            $detectedOS = $osEstimations.Keys | Sort-Object { $osEstimations[$_] } -Descending | Select-Object -First 1
+                            return $detectedOS
+                        }
+                    } -ArgumentList $ip, $commonPorts        
+                )
+            
+                $results = Receive-Job -Job $OSjobs -Wait -AutoRemoveJob
+                foreach ($result in $results) {
+                    if ($result -ne $null) {
+                        $OS += $result
+                    }
+                }
+            
+                if ($OS.Count -gt 0) {
+                    $OS = ($OS -join ' | ')
+                } else {
+                    $OS = "Unknown"
+                }
+            }   
+            
+            
     
+            $ipResult = @()
+            $ipdown = $Port.Length
             foreach ($portResult in $portResults) {
                 if ($portResult.Status -eq "Open") {
+                    $service = Get-ServiceByPort -Port $portResult.Port
                     $ipResult += New-Object psobject -Property ([ordered]@{
                         'Port' = $portResult.Port
-                        'Status' = $portResult.Status
-                        'Service' = $portResult.Service
+                        'Service' = $service
                     })
-                } else {
-                    $ipdown++
+                    $ipdown--
                 }
             }
+            $jobs += Start-Job -ScriptBlock {
+                param($ip, $ipResult, $OS, $ipdown, $Trace)
     
-            $FinalResult += @{
-                'Target' = $ip
-                'Result' = $ipResult
-                'OS' = $OS
-                'ClosedOrFilteredPorts' = $ipdown
-            }
-            $ipdown = 0
+                @{
+                    'Target' = $ip
+                    'Result' = $ipResult
+                    'OS' = $OS
+                    'ClosedOrFilteredPorts' = $ipdown
+                    'TraceRoute' = $Trace
+                }
+            } -ArgumentList $ip, $ipResult, $OS, $ipdown, $Trace
         }
-    }
+        $IPResults = Receive-Job -Job $jobs -Wait -AutoRemoveJob
+    }            
     
     end {
+        foreach ($resultItem in $IPResults) {
+            $report = "`nScan report for $($resultItem.Target):" + [Environment]::NewLine +
+                "$($resultItem.ClosedOrFilteredPorts) ports are closed or filtered." + [Environment]::NewLine +
+                "OS: $($resultItem.OS)" + [Environment]::NewLine +
+                "TraceRoute: $($resultItem.TraceRoute )" + [Environment]::NewLine +
+                ($resultItem.Result | Format-Table -AutoSize | Out-String)
+    
+            $report
+    
+            if ($PSBoundParameters.ContainsKey("OutputAll")) {
+                if (-not (Test-Path $OutputAll)) {
+                    New-Item -Path $OutputAll -ItemType File -Force | Out-Null
+                }
+                $report | Out-File -FilePath $OutputAll -Encoding UTF8 -Append
+                $resultItem | Export-Csv -Path "${OutputAll}.csv" -Encoding UTF8 -NoTypeInformation -Append
+                $resultItem | Export-Clixml -Path "${OutputAll}.xml" -Append
+            }
+    
+            if ($PSBoundParameters.ContainsKey("OutTxt")) {
+                if (-not (Test-Path $OutTxt)) {
+                    New-Item -Path $OutTxt -ItemType File -Force | Out-Null
+                }
+                $report | Out-File -FilePath $OutTxt -Encoding UTF8 -Append
+            }
+            if ($PSBoundParameters.ContainsKey("OutCsv")) {
+                if (-not (Test-Path $OutCsv)) {
+                    New-Item -Path $OutCsv -ItemType File -Force | Out-Null
+                }
+                $resultItem | Export-Csv -Path $OutCsv -Encoding UTF8 -NoTypeInformation -Append
+            }
+            if ($PSBoundParameters.ContainsKey("OutXml")) {
+                if (-not (Test-Path $OutXml)) {
+                    New-Item -Path $OutXml -ItemType File -Force | Out-Null
+                }
+                $resultItem | Export-Clixml -Path $OutXml -Append
+            }
+        }
+        "Scanning done: $($IPResults.Count) IP addresses scanned."
         $endDate = Get-Date
-        foreach ($resultItem in $FinalResult) {
-            "`nScan report for $($resultItem.Target):"
-            "$($resultItem.ClosedOrFilteredPorts) ports are closed or filtered."
-            "OS: $($resultItem.OS)"
-            $resultItem.Result | Format-Table -AutoSize
-        }
-    
-        "Scanning done: $counter IP addresses scanned."
         "End of scanning at $endDate"
-    
-    
-        if($PSBoundParameters.ContainsKey("OutputAll")){
-            $FinalResult | Out-File -Path $OutputAll -Encoding UTF8; $FinalResult | Export-Csv -Path $OutputAll-Encoding UTF8 -NoTypeInformation; $FinalResult | Export-Clixml -Path $OutputAll
-        }
-    
-        if($PSBoundParameters.ContainsKey("OutTxt")) {
-            $FinalResult | Out-File $OutTxt
-        }
-        if($PSBoundParameters.ContainsKey("OutCsv")) {
-            $FinalResult | Export-Csv -Path $OutCsv
-        }
-        if($PSBoundParameters.ContainsKey("OutXml")) {
-            $FinalResult | Export-Clixml -Path $OutXml
-        }
-    }
-              
+    }    
 }
 
-function Get-SYNScan {
+function Get-HalfOpenScan {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory, ValueFromPipeline)]
