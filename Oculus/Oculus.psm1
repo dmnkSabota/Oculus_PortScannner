@@ -555,11 +555,23 @@ function Get-ConnectScan{
     .PARAMETER OutXml
         Specifies that the result will be written to .xml file and path to where the file will be created.
 
+    .PARAMETER $OutputAll
+        Specifies that the result will be written to .txt, .csv and .xml file and path to where the file will be created.
+    
+    .PARAMETER TraceRoute
+        Specifies that the function should also provide traceroute info.
+
+    .PARAMETER Threads
+        Specifies how many threads to scan hosts and ports in paralell should be used to speed up scanning.
+
+    .PARAMETER OSdet
+        Specifies that function should also provide information about operating system.
+
     .EXAMPLE
          Get-ConnectScan -Target 1.1.1.0/26 -Port 80,100 
 
     .EXAMPLE
-         Get-ConnectScan -Target 1.1.1.'1,2,5,9' -Port 21,22,3066
+         Get-ConnectScan -Target 1.1.1.'1,2,5,9' -Port 21,22,3066 -OSDet -Threads 10
          
     .EXAMPLE
          Get-ConnectScan -Target 1.1.1.1-125 -Port 21,22 -OutXml "C:\Desktop"
@@ -568,7 +580,7 @@ function Get-ConnectScan{
          Get-ConnectScan -Target 1.1.1.35, 1.1.1.5 -Port 1,5,30 
     
     .EXAMPLE
-         Get-ConnectScan -Target 1.1.1.10 -TopXPorts 100  
+         Get-ConnectScan -Target 1.1.1.10 -TopXPorts 100 -Traceroute  
     
     .INPUTS
         System.String
@@ -611,7 +623,10 @@ function Get-ConnectScan{
         [string]$OutCsv,
 
         [Parameter(Position = 9, Mandatory = $false)]
-        [string]$OutXml
+        [string]$OutXml,
+
+        [Parameter(Position = 10, Mandatory = $false)]
+        [Int32]$Timeout = 1000
     )
 
     begin {
@@ -625,7 +640,9 @@ function Get-ConnectScan{
     
     process {
         $jobs = @()
+        $ipScanned = 0
         foreach ($ip in $IPs) {
+            $ipScanned++
             while ($jobs.Count -ge $Threads) {
                 $completedJob = Receive-Job -Job $jobs -Wait -AutoRemoveJob
                 $completedJob
@@ -636,38 +653,38 @@ function Get-ConnectScan{
             $traceJob = $null
             if ($TraceRoute) {
                 $traceJob = Start-Job -ScriptBlock {
-                    param($ip)
-                    $TraceResult = Test-NetConnection -ComputerName $ip -TraceRoute
+                    param($ip, $Timeout)
+                    $TraceResult = Test-NetConnection -ComputerName $ip -TraceRoute -WarningAction SilentlyContinue
                     $traceRoute = $TraceResult.TraceRoute | Where-Object { $_.ToString() -ne '::' } | ForEach-Object { $_.ToString() }
                     $traceString = $traceRoute -join ' -> '
                     return $traceString
-                } -ArgumentList $ip
+                } -ArgumentList $ip, $Timeout
             }
-                        
     
             foreach ($num in $Port) {
                 $portJobs += Start-Job -ScriptBlock {
-                    param($ip, $num)
+                    param($ip, $num, $Timeout)
     
-                    $result = Test-NetConnection -ComputerName $ip -Port $num -InformationLevel Quiet -WarningAction SilentlyContinue
-                    if ($result) {
-                        $status = "Open"
-                    } else {
-                        return
-                    }
+                    $tcpClient = New-Object System.Net.Sockets.TcpClient
+                    $connect = $tcpClient.BeginConnect($ip, $num, $null, $null)
+                    $waitResult = $connect.AsyncWaitHandle.WaitOne($Timeout, $false)
+                    $tcpClient.Close()
     
-                    @{
-                        'Port' = $num
-                        'Status' = $status
+                    if ($waitResult) {
+                        @{
+                            'Port' = $num
+                            'Status' = "Open"
+                        }
                     }
-                } -ArgumentList $ip, $num
+                } -ArgumentList $ip, $num, $Timeout
             }
     
             $portResults = Receive-Job -Job $portJobs -Wait -AutoRemoveJob
+            $detectedPorts = $portResults | ForEach-Object { $_.Port }
             if ($TraceRoute) {
                 $Trace = Receive-Job -Job $traceJob -Wait    
             }
-
+    
             $OS = $null
             if ($OSDet) {
                 $OS = @()
@@ -712,23 +729,28 @@ function Get-ConnectScan{
             
                     # Check for common ports
                     Start-Job -ScriptBlock {
-                        param($ip, $commonPorts)
-                    
-                        $portJobs = @()
-                    
-                        $allPorts = $commonPorts.Values | ForEach-Object { $_ } | Sort-Object -Unique
-                        foreach ($port in $allPorts) {
-                            $portJobs += Start-Job -ScriptBlock {
-                                param($ip, $port)
-                                if ((Test-NetConnection -ComputerName $ip -Port $port -WarningAction SilentlyContinue).TcpTestSucceeded) {
-                                    return $port
+                        param($ip, $commonPorts, $detectedPorts, $Timeout)
+
+                        $remainingPorts = $commonPorts.Values | ForEach-Object { $_ } | Sort-Object -Unique | Where-Object { -not ($detectedPorts -contains $_) }
+                        $portResults = @()
+
+                        foreach ($port in $remainingPorts) {
+                            $tcpClient = New-Object System.Net.Sockets.TcpClient
+                            $connect = $tcpClient.BeginConnect($ip, $port, $null, $null)
+                            $waitResult = $connect.AsyncWaitHandle.WaitOne($Timeout, $false)
+                            $tcpClient.Close()
+
+                            if ($waitResult) {
+                                $portResults += @{
+                                    'Port' = $port
+                                    'Status' = "Open"
                                 }
-                            } -ArgumentList $ip, $port
+                            }
                         }
-                    
-                        $detectedPorts = Receive-Job -Job $portJobs -Wait -AutoRemoveJob
-                    
-                        if ($detectedPorts) {
+    
+                        $allDetectedPorts = $detectedPorts + ($portResults | ForEach-Object { $_.Port })
+
+                        if ($allDetectedPorts) {
                             $osEstimations = @{}
                             foreach ($os in $commonPorts.Keys) {
                                 $osEstimations[$os] = ($commonPorts[$os] | Where-Object { $detectedPorts -contains $_ }).Count
@@ -736,12 +758,12 @@ function Get-ConnectScan{
                             $detectedOS = $osEstimations.Keys | Sort-Object { $osEstimations[$_] } -Descending | Select-Object -First 1
                             return $detectedOS
                         }
-                    } -ArgumentList $ip, $commonPorts        
+                    } -ArgumentList $ip, $commonPorts
                 )
             
                 $results = Receive-Job -Job $OSjobs -Wait -AutoRemoveJob
                 foreach ($result in $results) {
-                    if ($result -ne $null) {
+                    if ($null -ne $result) {
                         $OS += $result
                     }
                 }
@@ -768,16 +790,24 @@ function Get-ConnectScan{
                 }
             }
             $jobs += Start-Job -ScriptBlock {
-                param($ip, $ipResult, $OS, $ipdown, $Trace)
-    
-                @{
+                param($ip, $ipResult, $OS, $ipdown, $Trace, $TraceRoute, $OSDet)
+            
+                $output = New-Object psobject -Property @{
                     'Target' = $ip
                     'Result' = $ipResult
-                    'OS' = $OS
                     'ClosedOrFilteredPorts' = $ipdown
-                    'TraceRoute' = $Trace
                 }
-            } -ArgumentList $ip, $ipResult, $OS, $ipdown, $Trace
+            
+                if ($TraceRoute) {
+                    $output | Add-Member -MemberType NoteProperty -Name 'TraceRoute' -Value $Trace
+                }
+            
+                if ($OSDet) {
+                    $output | Add-Member -MemberType NoteProperty -Name 'OS' -Value $OS
+                }
+            
+                return $output
+            } -ArgumentList $ip, $ipResult, $OS, $ipdown, $Trace, $TraceRoute, $OSDet            
         }
         $IPResults = Receive-Job -Job $jobs -Wait -AutoRemoveJob
     }            
@@ -785,11 +815,17 @@ function Get-ConnectScan{
     end {
         foreach ($resultItem in $IPResults) {
             $report = "`nScan report for $($resultItem.Target):" + [Environment]::NewLine +
-                "$($resultItem.ClosedOrFilteredPorts) ports are closed or filtered." + [Environment]::NewLine +
-                "OS: $($resultItem.OS)" + [Environment]::NewLine +
-                "TraceRoute: $($resultItem.TraceRoute )" + [Environment]::NewLine +
-                ($resultItem.Result | Format-Table -AutoSize | Out-String)
+                "$($resultItem.ClosedOrFilteredPorts) ports are closed or filtered." + [Environment]::NewLine
     
+            if ($resultItem.PSObject.Properties.Name -contains 'OS') {
+                $report += "OS: $($resultItem.OS)" + [Environment]::NewLine
+            }
+    
+            if ($resultItem.PSObject.Properties.Name -contains 'TraceRoute') {
+                $report += "TraceRoute: $($resultItem.TraceRoute)" + [Environment]::NewLine
+            }
+    
+            $report += ($resultItem.Result | Format-Table -AutoSize | Out-String)
             $report
     
             if ($PSBoundParameters.ContainsKey("OutputAll")) {
@@ -820,9 +856,10 @@ function Get-ConnectScan{
                 $resultItem | Export-Clixml -Path $OutXml -Append
             }
         }
-        "Scanning done: $($IPResults.Count) IP addresses scanned."
+        "Scanning done: $ipScanned IP addresses scanned."
         $endDate = Get-Date
         "End of scanning at $endDate"
+        "Timeout: $Timeout"
     }    
 }
 
