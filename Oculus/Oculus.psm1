@@ -134,93 +134,6 @@ function Get-TopXPorts {
 
 }
 
-function Get-OSInfo {
-    [CmdletBinding()]
-    param(
-        [Parameter(Mandatory = $true, Position = 0)]
-        [string]$Target
-    )
-
-    $osList = @()
-
-    $commonPorts = @{
-        'Linux/Unix/BSD' = @(22, 25, 80, 443, 3306, 5432, 548, 631, 8000);
-        'Windows' = @(80, 443, 445, 3389, 1433);
-    }
-
-    $jobs = @(
-        Start-Job -ScriptBlock {
-            param($Target)
-            try {
-                $SMBInfo = (Get-SmbConnection -CimSession (New-CimSession -ComputerName $Target -SessionOption (New-CimSessionOption -Protocol Dcom) -ErrorAction Stop) -ErrorAction Stop).ServerName
-                if ($SMBInfo) {
-                    return "$($SMBInfo.OperatingSystem) | $($SMBInfo.Version)"
-                }
-            } catch {}
-        } -ArgumentList $Target
-
-        Start-Job -ScriptBlock {
-            param($Target)
-            try {
-                $HTTPHeader = (Invoke-WebRequest -Uri "http://$Target" -TimeoutSec 5 -UseBasicParsing -ErrorAction Stop).Headers["Server"]
-                if ($HTTPHeader) {
-                    return [regex]::Match($HTTPHeader, '\((.*?)\)').Groups[1].Value
-                }
-            } catch {}
-        } -ArgumentList $Target
-
-        Start-Job -ScriptBlock {
-            param($Target)
-            try {
-                $DNSTXT = (Resolve-DnsName -Name $Target -Type TXT -ErrorAction Stop).Strings
-                if ($DNSTXT) {
-                    return "$($DNSTXT -join ' | ')"
-                }
-            } catch {}
-        } -ArgumentList $Target
-
-        Start-Job -ScriptBlock {
-            param($Target, $commonPorts)
-        
-            $portJobs = @()
-        
-            $allPorts = $commonPorts.Values | ForEach-Object { $_ } | Sort-Object -Unique
-            foreach ($port in $allPorts) {
-                $portJobs += Start-Job -ScriptBlock {
-                    param($Target, $port)
-                    if ((Test-NetConnection -ComputerName $Target -Port $port -WarningAction SilentlyContinue).TcpTestSucceeded) {
-                        return $port
-                    }
-                } -ArgumentList $Target, $port
-            }
-        
-            $detectedPorts = Receive-Job -Job $portJobs -Wait -AutoRemoveJob
-        
-            if ($detectedPorts) {
-                $osEstimations = @{}
-                foreach ($os in $commonPorts.Keys) {
-                    $osEstimations[$os] = ($commonPorts[$os] | Where-Object { $detectedPorts -contains $_ }).Count
-                }
-                $detectedOS = $osEstimations.Keys | Sort-Object { $osEstimations[$_] } -Descending | Select-Object -First 1
-                return $detectedOS
-            }
-        } -ArgumentList $Target, $commonPorts        
-    )
-
-    $results = Receive-Job -Job $jobs -Wait -AutoRemoveJob
-    foreach ($result in $results) {
-        if ($result -ne $null) {
-            $osList += $result
-        }
-    }
-
-    if ($osList.Count -gt 0) {
-        return ($osList -join ' | ')
-    }
-
-    return "Unknown"
-}
-
 function Get-ServiceByPort {
     [CmdletBinding()]
     param (
@@ -409,7 +322,6 @@ function Get-ServiceByPort {
         
     }
 }
-
    
 function Get-HostDiscovery{
     <#
@@ -542,40 +454,31 @@ function Get-ConnectScan{
     
     .PARAMETER Port
         Specifies port number(s) to be scanned.
-
     .PARAMETER TopXPorts
         Specifies number of the most used ports to be scanned.
     
     .PARAMETER OutTxt
         Specifies that the result will be written to .txt file and path to where the file will be created.
-
     .PARAMETER OutCsv
         Specifies that the result will be written to .csv file and path to where the file will be created.
-
     .PARAMETER OutXml
         Specifies that the result will be written to .xml file and path to where the file will be created.
-
     .PARAMETER $OutputAll
         Specifies that the result will be written to .txt, .csv and .xml file and path to where the file will be created.
     
     .PARAMETER TraceRoute
         Specifies that the function should also provide traceroute info.
-
     .PARAMETER Threads
         Specifies how many threads to scan hosts and ports in paralell should be used to speed up scanning.
-
     .PARAMETER OSdet
         Specifies that function should also provide information about operating system.
-
     .EXAMPLE
          Get-ConnectScan -Target 1.1.1.0/26 -Port 80,100 
-
     .EXAMPLE
          Get-ConnectScan -Target 1.1.1.'1,2,5,9' -Port 21,22,3066 -OSDet -Threads 10
          
     .EXAMPLE
          Get-ConnectScan -Target 1.1.1.1-125 -Port 21,22 -OutXml "C:\Desktop"
-
     .EXAMPLE
          Get-ConnectScan -Target 1.1.1.35, 1.1.1.5 -Port 1,5,30 
     
@@ -863,117 +766,3 @@ function Get-ConnectScan{
     }    
 }
 
-function Get-HalfOpenScan {
-    [CmdletBinding()]
-    param(
-        [Parameter(Mandatory, ValueFromPipeline)]
-        [string[]]$ComputerName,
-	  
-        [Parameter(Mandatory)]
-        [ValidateRange(1,65535)]
-        [int[]]$Port,
-
-        [Parameter(Position = 1, Mandatory = $false)]
-        [Int32]$TopXPorts,
-
-        [Parameter(Position = 2, Mandatory = $false)]
-        [string]$OutputAll,
-        
-        [Parameter(Position = 2, Mandatory = $false)]
-        [string]$OutTxt,
-
-        [Parameter(Position = 2, Mandatory = $false)]
-        [string]$OutCsv,
-
-        [Parameter(Position = 2, Mandatory = $false)]
-        [string]$OutXml,
-
-        [int]$Timeout = 1000
-
-    )
-
-    begin {
-        if($PSBoundParameters.ContainsKey("TopXPorts")) {
-            $Port = Get-TopXPorts - TopXPorts $TopXPorts
-        }
-
-    }
-
-    process {
-        foreach ($computer in $ComputerName) {
-            try {
-                $ipAddress = [System.Net.Dns]::GetHostAddresses($computer) | Where-Object {$_.AddressFamily -eq "InterNetwork"} | Select-Object -First 1
-                foreach ($p in $Port) {
-                    $endPoint = New-Object System.Net.IPEndPoint $ipAddress, $p
-                    $socket = New-Object System.Net.Sockets.Socket([System.Net.Sockets.AddressFamily]::InterNetwork, [System.Net.Sockets.SocketType]::Stream, [System.Net.Sockets.ProtocolType]::Tcp)
-                    $socket.ReceiveTimeout = $Timeout
-
-                    try {
-                        $socket.Connect($endPoint)
-
-                        # Create a custom SYN packet
-                        $synPacket = [byte[]]@(0x53, 0x59, 0x4E, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x70, 0x02, 0xFF, 0xFF, 0x00, 0x00, 0x02, 0x04, 0x05, 0xB4, 0x04, 0x02, 0x08, 0x0A, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x03, 0x03, 0x07)
-
-                        # Send the packet asynchronously
-                        $socket.Send($synPacket)
-
-                        # Wait for the response
-                        $bytes = New-Object byte[] 1024
-                        $received = $socket.Receive($bytes, 0, $bytes.Length, [System.Net.Sockets.SocketFlags]::None)
-
-                        if ($received -gt 0) {
-                            $result = [pscustomobject]@{
-                                ComputerName = $computer
-                                Port = $p
-                                Protocol = "TCP"
-                                State = "Open"
-                            }
-                        }
-                        else {
-                            $result = [pscustomobject]@{
-                                ComputerName = $computer
-                                Port = $p
-                                Protocol = "TCP"
-                                State = "Closed"
-                            }
-                        }
-
-                        $results += $result
-                        $socket.Shutdown([System.Net.Sockets.SocketShutdown]::Both)
-                        $socket.Close()
-                    }
-                    catch {
-                        $result = [pscustomobject]@{
-                            ComputerName = $computer
-                            Port = $p
-                            Protocol = "TCP"
-                            State = "Filtered"
-                        }
-                        $results += $result
-                    }
-                }
-            }
-            catch {
-                Write-Warning "Unable to resolve hostname '$computer'"
-            }
-        }
-    }
-
-    end {
-        $results | Sort-Object ComputerName, Port | Format-Table -AutoSize
-
-        if($PSBoundParameters.ContainsKey("OutputAll")){
-            $results | Out-File -Path $OutputAll -Encoding UTF8; $FinalResult | Export-Csv -Path $OutputAll-Encoding UTF8 -NoTypeInformation; $FinalResult | Export-Clixml -Path $OutputAll
-        }
-            
-        if($PSBoundParameters.ContainsKey("OutTxt")) {
-            $results | Out-File $OutTxt
-        }
-        if($PSBoundParameters.ContainsKey("OutCsv")) {
-            $results | Export-Csv -Path $OutCsv
-        }
-        if($PSBoundParameters.ContainsKey("OutXml")) {
-            $results | Export-Clixml -Path $OutXml
-        }
-    }
-}
