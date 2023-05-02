@@ -1,6 +1,6 @@
 # Oculus Network Scanner
 
-Oculus Network Scanner is a powerful and flexible PowerShell module designed for network discovery, port scanning, and OS detection. It includes five core functions that will enable you to easily gather information about your network's infrastructure and open ports on target systems.
+Oculus Network Scanner is PowerShell module designed for network discovery, port scanning, and OS detection. It includes five core functions that will enable you to easily gather information about your network's infrastructure and open ports on target systems.
 
 ## Table of Contents
 
