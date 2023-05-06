@@ -45,55 +45,62 @@ function Get-TargetEnumeration {
     )
 
     begin {
-        $iplist = @() 
+        $iplist = @()
+        $wrongIn = @()
     }
 
     process {
         foreach ($ip in $Target) {
-            if ($ip -match '^(\d{1,3}\.){3}\d{1,3}$'){
-                $iplist += $ip
-            }
-            elseif ($ip -match '^(\d{1,3}\.){3}\d{1,3}(-\d{1,3})?$') {
-                $start,$end = $ip.Split('-')
-                $lastDotIndex = $start.LastIndexOf('.')
-                $prefix = $start.Substring(0, $lastDotIndex + 1) 
-                [int]$suffix = $start.Substring($lastDotIndex + 1)
+            try {
+                if ($ip -match '^(\d{1,3}\.){3}\d{1,3}$'){
+                    $iplist += $ip
+                }
+                elseif ($ip -match '^(\d{1,3}\.){3}\d{1,3}(-\d{1,3})?$') {
+                    $start,$end = $ip.Split('-')
+                    $lastDotIndex = $start.LastIndexOf('.')
+                    $prefix = $start.Substring(0, $lastDotIndex + 1) 
+                    [int]$suffix = $start.Substring($lastDotIndex + 1)
 
-                for ($suffix  ; $suffix -le $end; $suffix++) {
-                    $iplist += $prefix + [string]$suffix 
+                    for ($suffix  ; $suffix -le $end; $suffix++) {
+                        $iplist += $prefix + [string]$suffix 
+                    }
                 }
-            }
-            elseif ($ip -match '^(\d{1,3}\.){3}(\d{1,3},)+\d{1,3}$') {
-                $lastDotIndex = $ip.LastIndexOf('.')
-                $prefix,$end = $ip.Substring(0, $lastDotIndex + 1),$ip.Substring($lastDotIndex + 1)
-                $suffixes = $end.Split(",")
-                foreach ($s in $suffixes) {
-                    $iplist += $prefix + $s
+                elseif ($ip -match '^(\d{1,3}\.){3}(\d{1,3},)+\d{1,3}$') {
+                    $lastDotIndex = $ip.LastIndexOf('.')
+                    $prefix,$end = $ip.Substring(0, $lastDotIndex + 1),$ip.Substring($lastDotIndex + 1)
+                    $suffixes = $end.Split(",")
+                    foreach ($s in $suffixes) {
+                        $iplist += $prefix + $s
+                    }
                 }
-            }
-            elseif ($ip -match '^(\d{1,3}\.){3}\d{1,3}(/\d{1,2})?$') {
-                $ipadd,$cidr = $ip.Split('/')
-                $lastDotIndex = $ipadd.LastIndexOf('.')
-                $prefix,$suffix = $ipadd.Substring(0, $lastDotIndex + 1),$ipadd.Substring($lastDotIndex + 1)
-                $hostNum = [math]::Pow(2, (32 - $cidr)) - 1
-                for($i = 1; $i -lt $hostNum; $i++){
-                    $iplist += $prefix + $i
+                elseif ($ip -match '^(\d{1,3}\.){3}\d{1,3}(/\d{1,2})?$') {
+                    $ipadd,$cidr = $ip.Split('/')
+                    $lastDotIndex = $ipadd.LastIndexOf('.')
+                    $prefix,$suffix = $ipadd.Substring(0, $lastDotIndex + 1),$ipadd.Substring($lastDotIndex + 1)
+                    $hostNum = [math]::Pow(2, (32 - $cidr)) - 1
+                    for($i = 1; $i -lt $hostNum; $i++){
+                        $iplist += $prefix + $i
+                    }
                 }
-            }
-            elseif ($ip -match '^([0-9A-Fa-f]{0,4}:){1,7}[0-9A-Fa-f]{0,4}(/(\d{1,2}))?$') {
-                $iplist += $ip
-            }
-            else{
-                $resolvedIp = [Net.Dns]::GetHostAddresses($ip) | Select-Object -ExpandProperty IPAddressToString
-                $iplist +=  $resolvedIp
+                elseif ($ip -match '^([0-9A-Fa-f]{0,4}:){1,7}[0-9A-Fa-f]{0,4}(/(\d{1,2}))?$') {
+                    $iplist += $ip
+                }
+                else{
+                    $resolvedIp = [Net.Dns]::GetHostAddresses($ip) | Select-Object -ExpandProperty IPAddressToString
+                    $iplist +=  $resolvedIp
+                }
+            } catch {
+                $wrongIn += $ip
             }
         }
     }
 
     end {
-     return $iplist
+        return @{
+            IPs = $iplist
+            ErrorValues = $wrongIn
+        } 
     }
-
 }
 
 function Get-TopXPorts {
@@ -404,13 +411,17 @@ function Get-HostDiscovery{
         [string]$OutXml,
 
         [Parameter(Position = 8, Mandatory = $false)]
-        [Int32]$Timeout = 1000
+        [Int32]$Timeout = 1000,
+
+        [Parameter(Position = 9, Mandatory = $false)]
+        [switch]$Detailed 
     )
         
     begin {
         $date=Get-Date
         "Starting Host Discovery at $date "
-        $IPs = Get-TargetEnumeration $Target #creating list of IP addresses
+        $Targets = Get-TargetEnumeration $Target #creating list of IP addresses
+        $IPs = @($($Targets.IPs))
     } 
     
     process {
@@ -505,12 +516,12 @@ function Get-HostDiscovery{
                         Start-Job -ScriptBlock {
                             param($ip, $commonPorts, $Timeout)
                         
-                            $remainingPorts = $commonPorts.Values | ForEach-Object { $_ } | Sort-Object -Unique
+                            $uniquePorts = $commonPorts.Values | ForEach-Object { $_ } | Sort-Object -Unique
                             $portResults = @()
                         
-                            foreach ($port in $remainingPorts) {
+                            foreach ($port in $uniquePorts) {
                                 if ($ip -match '^([0-9A-Fa-f]{0,4}:){1,7}[0-9A-Fa-f]{0,4}(/(\d{1,2}))?$'){
-                                    $result =  Test-NetConnection -ComputerName $ip -Port $port -WarningAction SilentlyContinue #pinging IP address
+                                    $result =  Test-NetConnection -ComputerName $ip -Port $port -WarningAction SilentlyContinue 
                                     if ($result.TcpTestSucceeded) {
                                         $portResults += @{
                                             'Port' = $port
@@ -520,28 +531,21 @@ function Get-HostDiscovery{
                                 }else{
                                     $tcpClient = New-Object System.Net.Sockets.TcpClient
                                     $addresses = [System.Net.Dns]::GetHostAddresses($ip)
-                        
-                                    $success = $false
                                     foreach ($address in $addresses) {
                                         try {
-                                            $connect = $tcpClient.BeginConnect($address, $num, $null, $null)
+                                            $connect = $tcpClient.BeginConnect($address, $port, $null, $null)
                                             $waitResult = $connect.AsyncWaitHandle.WaitOne($Timeout, $false)
                         
                                             if ($waitResult) {
-                                                $success = $true
+                                                $portResults += @{
+                                                    'Port'   = $port
+                                                    'Status' = "Open"
+                                                }
+                                                $tcpClient.Close()
                                                 break
                                             }
                                         } catch {
                                             continue
-                                        }
-                                    }
-                        
-                                    $tcpClient.Close()
-                        
-                                    if ($success) {
-                                        @{
-                                            'Port'   = $num
-                                            'Status' = "Open"
                                         }
                                     }
                                 }
@@ -590,7 +594,7 @@ function Get-HostDiscovery{
                     }
                 
                     return $output
-                } -ArgumentList $ip, $OS, $Trace, $TraceRoute, $OSDet 
+                } -ArgumentList $ip, $OS, $Trace, $TraceRoute ,$OSDet  
             }else{
                 $ipdown++
             }           
@@ -646,6 +650,9 @@ function Get-HostDiscovery{
         $endDate = Get-Date
         "End of scanning at $endDate"
         "Timeout: $Timeout"
+        if ($PSBoundParameters.ContainsKey("Detailed")) {
+            "[ERROR] Wrong type of input: [" + $($Targets.ErrorValues) + "]"
+        }
     }
 }
 
@@ -798,7 +805,7 @@ function Get-ConnectScan{
                             $result =  Test-NetConnection -ComputerName $ip -Port $num -WarningAction SilentlyContinue #pinging IP address
                             if ($result.TcpTestSucceeded) {
                                 $portResults += @{
-                                    'Port' = $port
+                                    'Port' = $num
                                     'Status' = "Open"
                                 }
                             } 
@@ -901,7 +908,7 @@ function Get-ConnectScan{
     
                             foreach ($port in $remainingPorts) {
                                 if ($ip -match '^([0-9A-Fa-f]{0,4}:){1,7}[0-9A-Fa-f]{0,4}(/(\d{1,2}))?$'){
-                                    $result =  Test-NetConnection -ComputerName $ip -Port $port -WarningAction SilentlyContinue #pinging IP address
+                                    $result =  Test-NetConnection -ComputerName $ip -Port $port -WarningAction SilentlyContinue 
                                     if ($result.TcpTestSucceeded) {
                                         $portResults += @{
                                             'Port' = $port
@@ -915,7 +922,7 @@ function Get-ConnectScan{
                                     $success = $false
                                     foreach ($address in $addresses) {
                                         try {
-                                            $connect = $tcpClient.BeginConnect($address, $num, $null, $null)
+                                            $connect = $tcpClient.BeginConnect($address, $port, $null, $null)
                                             $waitResult = $connect.AsyncWaitHandle.WaitOne($Timeout, $false)
                                 
                                             if ($waitResult) {
@@ -930,10 +937,10 @@ function Get-ConnectScan{
                                     $tcpClient.Close()
                                 
                                     if ($success) {
-                                        @{
-                                            'Port'   = $num
+                                        $portResults += @{
+                                            'Port'   = $port
                                             'Status' = "Open"
-                                        }
+                                        } 
                                     }
                                 }
                             }
@@ -950,7 +957,6 @@ function Get-ConnectScan{
                             }
                         } -ArgumentList $ip, $commonPorts
                     )
-                
                     $results = Receive-Job -Job $OSjobs -Wait -AutoRemoveJob
                     foreach ($result in $results) {
                         if ($null -ne $result) {
@@ -1054,4 +1060,3 @@ function Get-ConnectScan{
         "Timeout: $Timeout"
     }    
 }
-
