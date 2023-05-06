@@ -475,17 +475,6 @@ function Get-HostDiscovery {
                     }
                 
                     $OSjobs = @(
-                        # Check for SMB information
-                        Start-Job -ScriptBlock {
-                            param($ip)
-                            try {
-                                $SMBInfo = (Get-SmbConnection -CimSession (New-CimSession -ComputerName $ip -SessionOption (New-CimSessionOption -Protocol Dcom) -ErrorAction Stop) -ErrorAction Stop).ServerName
-                                if ($SMBInfo) {
-                                    return "$($SMBInfo.OperatingSystem) | $($SMBInfo.Version)"
-                                }
-                            } catch {}
-                        } -ArgumentList $ip
-                
                         # Check for HTTP header information
                         Start-Job -ScriptBlock {
                             param($ip)
@@ -572,12 +561,17 @@ function Get-HostDiscovery {
                         $OS = "Unknown"
                     }
                 }
-
+                try {
+                    $dnsEntry = [System.Net.Dns]::GetHostEntry($ip)
+                }catch{
+                    continue
+                }
                 $jobs += Start-Job -ScriptBlock {
-                    param($ip, $OS, $Trace, $TraceRoute, $OSDet)
+                    param($ip, $dnsEntry, $OS, $Trace, $TraceRoute, $OSDet)
                 
                     $output = New-Object psobject -Property @{
                         'Target' = $ip
+                        'DNSname' = $dnsEntry.HostName
                         'Result' = $pingResult
                     }
                 
@@ -590,7 +584,7 @@ function Get-HostDiscovery {
                     }
 
                     return $output
-                } -ArgumentList $ip, $OS, $Trace, $TraceRoute, $OSDet
+                } -ArgumentList $ip, $dnsEntry, $OS, $Trace, $TraceRoute, $OSDet
             } else {
                 $ipdown++
             }
@@ -600,7 +594,8 @@ function Get-HostDiscovery {
 
     end {
         foreach ($resultItem in $Results) {
-            $report = "`nScan report for $($resultItem.Target):" + [Environment]::NewLine
+            $report = "`nScan report for $($resultItem.Target):" + [Environment]::NewLine +
+                "DNS Name: $($resultItem.DNSname)" + [Environment]::NewLine 
 
             if ($resultItem.PSObject.Properties.Name -contains 'OS') {
                 $report += "OS: $($resultItem.OS)" + [Environment]::NewLine
@@ -862,17 +857,6 @@ function Get-ConnectScan{
                     }
                 
                     $OSjobs = @(
-                        # Check for SMB information
-                        Start-Job -ScriptBlock {
-                            param($ip)
-                            try {
-                                $SMBInfo = (Get-SmbConnection -CimSession (New-CimSession -ComputerName $ip -SessionOption (New-CimSessionOption -Protocol Dcom) -ErrorAction Stop) -ErrorAction Stop).ServerName
-                                if ($SMBInfo) {
-                                    return "$($SMBInfo.OperatingSystem) | $($SMBInfo.Version)"
-                                }
-                            } catch {}
-                        } -ArgumentList $ip
-                
                         # Check for HTTP header information
                         Start-Job -ScriptBlock {
                             param($ip)
@@ -972,11 +956,17 @@ function Get-ConnectScan{
                         $ipdown--
                     }
                 }
+                try {
+                    $dnsEntry = [System.Net.Dns]::GetHostEntry($ip)
+                }catch{
+                    continue
+                }
                 $jobs += Start-Job -ScriptBlock {
-                    param($ip, $ipResult, $OS, $ipdown, $Trace, $TraceRoute, $OSDet)
+                    param($ip, $ipResult, $dnsEntry, $OS, $ipdown, $Trace, $TraceRoute, $OSDet)
                 
                     $output = New-Object psobject -Property @{
                         'Target' = $ip
+                        'DNSname' = $dnsEntry.HostName
                         'Result' = $ipResult
                         'ClosedOrFilteredPorts' = $ipdown
                     }
@@ -990,7 +980,7 @@ function Get-ConnectScan{
                     }
                 
                     return $output
-                } -ArgumentList $ip, $ipResult, $OS, $ipdown, $Trace, $TraceRoute, $OSDet 
+                } -ArgumentList $ip, $ipResult, $dnsEntry, $OS, $ipdown, $Trace, $TraceRoute, $OSDet 
             }else{ 
                 $hostsDown++
             }            
@@ -1001,6 +991,7 @@ function Get-ConnectScan{
     end {
         foreach ($resultItem in $IPResults) {
             $report = "`nScan report for $($resultItem.Target):" + [Environment]::NewLine +
+                "DNS Name: $($resultItem.DNSname)" + [Environment]::NewLine +
                 "$($resultItem.ClosedOrFilteredPorts) ports are closed or filtered." + [Environment]::NewLine
     
             if ($resultItem.PSObject.Properties.Name -contains 'OS') {
@@ -1013,7 +1004,7 @@ function Get-ConnectScan{
     
             $report += ($resultItem.Result | Format-Table -AutoSize | Out-String)
             $report
-            
+
             if ($PSBoundParameters.ContainsKey("OutputAll")) {
                 if (-not (Test-Path $OutputAll)) {
                     New-Item -Path $OutputAll -ItemType File -Force | Out-Null
