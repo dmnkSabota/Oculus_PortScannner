@@ -330,7 +330,7 @@ function Get-ServiceByPort {
     }
 }
    
-function Get-HostDiscovery{
+function Get-HostDiscovery {
     <#
     .SYNOPSIS
         Get-HostDiscovery is used to find which hosts on the network are up. 
@@ -362,6 +362,12 @@ function Get-HostDiscovery{
 
     .PARAMETER OSdet
         Specifies that function should also provide information about operating system.
+
+    .PARAMETER Timeout
+        Specifies timeout for port scanning in OS detection.
+
+    .PARAMETER Detailed
+        Shows more info about process, such as error input.
     
     .EXAMPLE
         Get-HostDiscovery -Target 1.1.1.0/26 Threads 10
@@ -418,8 +424,8 @@ function Get-HostDiscovery{
     )
         
     begin {
-        $date=Get-Date
-        "Starting Host Discovery at $date "
+        $date = [DateTime]::Now
+        "Starting Host Discovery at $date"
         $Targets = Get-TargetEnumeration $Target #creating list of IP addresses
         $IPs = @($($Targets.IPs))
     } 
@@ -436,27 +442,19 @@ function Get-HostDiscovery{
                 $jobs = $jobs | Where-Object { $_.State -ne 'Completed' }
             }
 
-            $pingJobs = @()
-            $pingJobs += Start-Job -ScriptBlock {
+            $pingJob = Start-Job -ScriptBlock {
                 param($ip, $Timeout)
                 $result = Test-Connection -ComputerName $ip -Quiet -Count 1 -Delay ($Timeout/1000) #pinging IP address
-
-                if ($result) {
-                    @{
-                        'Host' = $ip
-                        'Status' = "Up"
-                    }
-                }else{
-                    @{
-                        'Host' = $ip
-                        'Status' = "Down"
-                    }
+                @{
+                    'Host' = $ip
+                    'Status' = if ($result) { "Up" } else { "Down" }
                 }
             } -ArgumentList $ip, $Timeout
 
-            $pingResults = Receive-Job -Job $pingJobs -Wait -AutoRemoveJob
+            $pingResult = Receive-Job -Job $pingJob -Wait -AutoRemoveJob
             
-            if ($pingResults.Status -eq "Up") {
+            if ($pingResult.Status -eq "Up") {
+                $Trace = $null
                 if ($TraceRoute) {
                     $traceJob = Start-Job -ScriptBlock {
                         param($ip, $Timeout)
@@ -466,8 +464,6 @@ function Get-HostDiscovery{
                         return $traceString
                     } -ArgumentList $ip, $Timeout
                     $Trace = Receive-Job -Job $traceJob -Wait
-                } else {
-                    $Trace = $null
                 }
 
                 $OS = $null
@@ -514,12 +510,12 @@ function Get-HostDiscovery{
                 
                         # Check for common ports
                         Start-Job -ScriptBlock {
-                            param($ip, $commonPorts, $Timeout)
-                        
-                            $uniquePorts = $commonPorts.Values | ForEach-Object { $_ } | Sort-Object -Unique
+                            param($ip, $commonPorts, $detectedPorts, $Timeout)
+    
+                            $remainingPorts = $commonPorts.Values | ForEach-Object { $_ } | Sort-Object -Unique | Where-Object { -not ($detectedPorts -contains $_) }
                             $portResults = @()
-                        
-                            foreach ($port in $uniquePorts) {
+    
+                            foreach ($port in $remainingPorts) {
                                 if ($ip -match '^([0-9A-Fa-f]{0,4}:){1,7}[0-9A-Fa-f]{0,4}(/(\d{1,2}))?$'){
                                     $result =  Test-NetConnection -ComputerName $ip -Port $port -WarningAction SilentlyContinue 
                                     if ($result.TcpTestSucceeded) {
@@ -535,7 +531,7 @@ function Get-HostDiscovery{
                                         try {
                                             $connect = $tcpClient.BeginConnect($address, $port, $null, $null)
                                             $waitResult = $connect.AsyncWaitHandle.WaitOne($Timeout, $false)
-                        
+                                
                                             if ($waitResult) {
                                                 $portResults += @{
                                                     'Port'   = $port
@@ -550,19 +546,19 @@ function Get-HostDiscovery{
                                     }
                                 }
                             }
-                        
-                            if ($portResults) {
+        
+                            $allDetectedPorts = $detectedPorts + ($portResults | ForEach-Object { $_.Port })
+    
+                            if ($allDetectedPorts) {
                                 $osEstimations = @{}
                                 foreach ($os in $commonPorts.Keys) {
-                                    $osEstimations[$os] = ($commonPorts[$os] | Where-Object { $portResults.Port -contains $_ }).Count
+                                    $osEstimations[$os] = ($commonPorts[$os] | Where-Object { $detectedPorts -contains $_ }).Count
                                 }
                                 $detectedOS = $osEstimations.Keys | Sort-Object { $osEstimations[$_] } -Descending | Select-Object -First 1
                                 return $detectedOS
                             }
-                        } -ArgumentList $ip, $commonPorts, $Timeout
-                        
+                        } -ArgumentList $ip, $commonPorts
                     )
-                
                     $results = Receive-Job -Job $OSjobs -Wait -AutoRemoveJob
                     foreach ($result in $results) {
                         if ($null -ne $result) {
@@ -582,41 +578,41 @@ function Get-HostDiscovery{
                 
                     $output = New-Object psobject -Property @{
                         'Target' = $ip
-                        'Result' = $pingResults
+                        'Result' = $pingResult
                     }
                 
                     if ($TraceRoute) {
                         $output | Add-Member -MemberType NoteProperty -Name 'TraceRoute' -Value $Trace
                     }
-                
+
                     if ($OSDet) {
                         $output | Add-Member -MemberType NoteProperty -Name 'OS' -Value $OS
                     }
-                
+
                     return $output
-                } -ArgumentList $ip, $OS, $Trace, $TraceRoute ,$OSDet  
-            }else{
+                } -ArgumentList $ip, $OS, $Trace, $TraceRoute, $OSDet
+            } else {
                 $ipdown++
-            }           
+            }
         }
-        $Results = Receive-Job -Job $jobs -Wait -AutoRemoveJob    
+        $Results = Receive-Job -Job $jobs -Wait -AutoRemoveJob
     }
-        
+
     end {
         foreach ($resultItem in $Results) {
-            $report = "`nScan report for $($resultItem.Target):" + [Environment]::NewLine 
-                
+            $report = "`nScan report for $($resultItem.Target):" + [Environment]::NewLine
+
             if ($resultItem.PSObject.Properties.Name -contains 'OS') {
                 $report += "OS: $($resultItem.OS)" + [Environment]::NewLine
             }
-    
+
             if ($resultItem.PSObject.Properties.Name -contains 'TraceRoute') {
                 $report += "TraceRoute: $($resultItem.TraceRoute)" + [Environment]::NewLine
             }
-    
+
             $report += ($resultItem.Result | Format-Table -AutoSize | Out-String)
             $report
-    
+
             if ($PSBoundParameters.ContainsKey("OutputAll")) {
                 if (-not (Test-Path $OutputAll)) {
                     New-Item -Path $OutputAll -ItemType File -Force | Out-Null
@@ -647,11 +643,11 @@ function Get-HostDiscovery{
         }
         "Scanning done: $ipScanned IP addresses scanned."
         "$ipdown hosts are down or filtered." + [Environment]::NewLine
-        $endDate = Get-Date
+        $endDate = [DateTime]::Now
         "End of scanning at $endDate"
         "Timeout: $Timeout"
         if ($PSBoundParameters.ContainsKey("Detailed")) {
-            "[ERROR] Wrong type of input: [" + $($Targets.ErrorValues) + "]"
+            "[ERROR] Wrong type of input: [" + @($($Targets.ErrorValues) -join ', ') + "]"
         }
     }
 }
@@ -699,6 +695,9 @@ function Get-ConnectScan{
     .PARAMETER NoPing
         Specifies that function shouldn't check if the target is up.
 
+    .PARAMETER Detailed
+        Shows more info about process, such as error input.
+
     .EXAMPLE
          Get-ConnectScan -Target 1.1.1.0/26 -Port 80,100 -NoPing 
 
@@ -733,10 +732,10 @@ function Get-ConnectScan{
 
         [Parameter(Position = 1, Mandatory = $false)]
         [ValidateRange(1,65535)]
-        [int[]]$Port,
+        [int[]]$Port = 80,
 
         [Parameter(Position = 2, Mandatory = $false)]
-        [Int32]$TopXPorts,
+        [Int32]$TopXPorts = 1000,
 
         [Parameter(Position = 3, Mandatory = $false)]
         [switch]$OSDet,
@@ -763,15 +762,19 @@ function Get-ConnectScan{
         [Int32]$Timeout = 1000,
 
         [Parameter(Position = 11, Mandatory = $false)]
-        [switch]$NoPing 
+        [switch]$NoPing,
+        
+        [Parameter(Position = 12, Mandatory = $false)]
+        [switch]$Detailed 
     )
-
+        
     begin {
-        $date = Get-Date
+        $date=[DateTime]::Now
         "Starting TCP Connection Scan at $date"
-        $IPs = Get-TargetEnumeration $Target
+        $Targets = Get-TargetEnumeration $Target #creating list of IP addresses
+        $IPs = @($($Targets.IPs))
         if ($PSBoundParameters.ContainsKey("TopXPorts")) {
-            $Port = Get-TopXPorts -TopXPorts $TopXPorts
+            $Port += Get-TopXPorts -TopXPorts $TopXPorts
         }
     }
     
@@ -804,7 +807,7 @@ function Get-ConnectScan{
                         if ($ip -match '^([0-9A-Fa-f]{0,4}:){1,7}[0-9A-Fa-f]{0,4}(/(\d{1,2}))?$'){
                             $result =  Test-NetConnection -ComputerName $ip -Port $num -WarningAction SilentlyContinue #pinging IP address
                             if ($result.TcpTestSucceeded) {
-                                $portResults += @{
+                                @{
                                     'Port' = $num
                                     'Status' = "Open"
                                 }
@@ -812,15 +815,16 @@ function Get-ConnectScan{
                         }else{
                             $tcpClient = New-Object System.Net.Sockets.TcpClient
                             $addresses = [System.Net.Dns]::GetHostAddresses($ip)
-                        
-                            $success = $false
                             foreach ($address in $addresses) {
                                 try {
                                     $connect = $tcpClient.BeginConnect($address, $num, $null, $null)
                                     $waitResult = $connect.AsyncWaitHandle.WaitOne($Timeout, $false)
-                        
                                     if ($waitResult) {
-                                        $success = $true
+                                        @{
+                                            'Port'   = $num
+                                            'Status' = "Open"
+                                        }
+                                        $tcpClient.Close()
                                         break
                                     }
                                 } catch {
@@ -828,14 +832,6 @@ function Get-ConnectScan{
                                 }
                             }
                         
-                            $tcpClient.Close()
-                        
-                            if ($success) {
-                                @{
-                                    'Port'   = $num
-                                    'Status' = "Open"
-                                }
-                            }
                         }
                     } -ArgumentList $ip, $num, $Timeout
                     
@@ -918,29 +914,22 @@ function Get-ConnectScan{
                                 }else{
                                     $tcpClient = New-Object System.Net.Sockets.TcpClient
                                     $addresses = [System.Net.Dns]::GetHostAddresses($ip)
-                                
-                                    $success = $false
                                     foreach ($address in $addresses) {
                                         try {
                                             $connect = $tcpClient.BeginConnect($address, $port, $null, $null)
                                             $waitResult = $connect.AsyncWaitHandle.WaitOne($Timeout, $false)
                                 
                                             if ($waitResult) {
-                                                $success = $true
+                                                $portResults += @{
+                                                    'Port'   = $port
+                                                    'Status' = "Open"
+                                                }
+                                                $tcpClient.Close()
                                                 break
                                             }
                                         } catch {
                                             continue
                                         }
-                                    }
-                                
-                                    $tcpClient.Close()
-                                
-                                    if ($success) {
-                                        $portResults += @{
-                                            'Port'   = $port
-                                            'Status' = "Open"
-                                        } 
                                     }
                                 }
                             }
@@ -1055,8 +1044,11 @@ function Get-ConnectScan{
         }
         "Scanning done: $ipScanned IP addresses scanned."
         "$hostsDown hosts is/are down."
-        $endDate = Get-Date
+        $endDate = [DateTime]::Now
         "End of scanning at $endDate"
         "Timeout: $Timeout"
+        if ($PSBoundParameters.ContainsKey("Detailed")) {
+            "[ERROR] Wrong type of input: [" + @($($Targets.ErrorValues) -join ', ') + "]"
+        }
     }    
 }
