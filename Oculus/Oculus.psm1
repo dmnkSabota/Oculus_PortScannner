@@ -1013,7 +1013,7 @@ function Get-ConnectScan{
     
             $report += ($resultItem.Result | Format-Table -AutoSize | Out-String)
             $report
-    
+            
             if ($PSBoundParameters.ContainsKey("OutputAll")) {
                 if (-not (Test-Path $OutputAll)) {
                     New-Item -Path $OutputAll -ItemType File -Force | Out-Null
