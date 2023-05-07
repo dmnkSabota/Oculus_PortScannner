@@ -12,8 +12,8 @@ Oculus Network Scanner is PowerShell module designed for network discovery, port
     * [Get-TopXPorts](#get-topxports)
     * [Get-HostDiscovery](#get-hostdiscovery)
     * [Get-ConnectScan](#get-connectscan)
-6. [Contributing](#contributing)
-7. [License](#license)
+5. [Contributing](#contributing)
+6. [License](#license)
 
 ## Prerequisites
 
@@ -114,28 +114,32 @@ Get-TopXPorts -X 10
 Parameters:
 -**Target <IPAddress>**: The remote computer(s) to be scanned. Possible CIDR notation, range, or enumeration of IP addresses.
   
--**OutputAll <Path>**: Specifies that the result will be written to .txt, .csv, and .xml files and path to where the file will be created.
+-**OutputAll**: Specifies that the result will be written to .txt, .csv, and .xml files to Documents.
   
--**OutTxt <Path>**: Specifies that the result will be written to .txt file and path to where the file will be created.
+-**OutTxt**: Specifies that the result will be written to .txt file to Documents.
   
--**OutCsv <Path>**: Specifies that the result will be written to .csv file and path to where the file will be created.
+-**OutCsv**: Specifies that the result will be written to .csv file to Documents.
   
--**OutXml <Path>**: Specifies that the result will be written to .xml file and path to where the file will be created.
+-**OutXml**: Specifies that the result will be written to .xml file to Documents.
   
 -**TraceRoute**: Specifies that the function should also provide traceroute info.
   
 -**Threads <int>: Specifies how many threads to scan hosts and ports in parallel should be used to speed up scanning.
   
 -**OSdet**: Specifies that function should also provide information about operating system.
+
+-**Timeout**: Specifies timeout for port scanning in OS detection.
+
+-**Detailed**: Shows more info about process, such as error input for -Target parameter.
   
 Usage:
 ```powershell
-Get-HostDiscovery -Target <IPAddress> -Threads <int> -Traceroute -OSDet -OutTxt <Path>
+Get-HostDiscovery -Target <IPAddress> -Threads <int> -Traceroute -OSDet -OutTxt
 ```
   
 Example:
 ```powershell
-Get-HostDiscovery -Target 168.192.111.120 -Threads 5 -Traceroute -OSDet -OutTxt "C:\Desktop"
+Get-HostDiscovery -Target 168.192.111.120 -Threads 5 -Traceroute -OSDet -OutTxt
 ```  
 
 #### Get-ConnectScan
@@ -155,29 +159,32 @@ Parameters:
   
 -**TraceRoute**: A switch parameter to enable trace routing. This is an optional parameter and defaults to false.
   
--**OutputAll <Path>**: The path and name of the file to write all output to. This is an optional parameter and can be a full path or just a file name. If the file already exists, the output will be appended to the end of the file.
+-**OutputAll**: Specifies that the result will be written to .txt, .csv, and .xml files to Documents. If the file already exists, the output will be appended to the end of the file.
   
--**OutTxt <Path>**: The path and name of the file to write the output in text format. This is an optional parameter and can be a full path or just a file name. If the file already exists, the output will be appended to the end of the file.
+-**OutTxt**: Specifies that the result will be written to .txt file to Documents. If the file already exists, the output will be appended to the end of the file.
   
--**OutCsv <Path>**: The path and name of the file to write the output in CSV format. This is an optional parameter and can be a full path or just a file name. If the file already exists, the output will be appended to the end of the file.
+-**OutCsv**: Specifies that the result will be written to .csv file to Documents. If the file already exists, the output will be appended to the end of the file.
   
--**OutXml <Path>**: The path and name of the file to write the output in XML format. This is an optional parameter and can be a full path or just a file name. If the file already exists, the output will be appended to the end of the file.
+-**OutXml**: Specifies that the result will be written to .xml file to Documents. If the file already exists, the output will be appended to the end of the file.
   
 -**Timeout <int>**: The timeout for each connection attempt in milliseconds. This is an optional parameter and defaults to 1000.
   
 -**NoPing**: A switch parameter to disable ping before scanning. This is an optional parameter and defaults to false.
+
+-**Detailed**: Shows more info about process, such as error input for -Target parameter.
   
 Usage:
   
 ```powershell
-Get-ConnectScan -Target <IPAddress> -Port <int> -OSDet -TraceRoute -OutAll <Path> -Threads <int> -Timeout <int> -NoPing
+Get-ConnectScan -Target <IPAddress> -Port <int> -OSDet -TraceRoute -OutAll -Threads <int> -Timeout <int> -NoPing -Detailed
 ```
   
 Example:
   
 ```powershell
-Get-ConnectScan -Target "10.10.10.8,9,10" -Port 80, 21 -OSDet -TraceRoute -OutAll "C:\Desktop" -Threads 10 -Timeout 2000 -NoPing
+Get-ConnectScan -Target "10.10.10.8,9,10" -Port 80, 21 -OSDet -TraceRoute -OutAll -Threads 10 -Timeout 2000 -NoPing -Detailed
 ```
+
 
 ### Contributing
 If you would like to contribute to the development of the Oculus Network Scanner, please feel free to submit a pull request or open an issue for discussion.
