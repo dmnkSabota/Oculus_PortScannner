@@ -126,8 +126,7 @@ function Get-TopXPorts {
     #>
     [CmdletBinding()]
     param(
-        [Parameter(Mandatory = $true, Position = 0)]
-        [ValidateRange(1,1000)]
+        [Parameter(Mandatory = $true, Position = 0)][ValidateRange(1,1000)]
         [int]$X
     )
 
