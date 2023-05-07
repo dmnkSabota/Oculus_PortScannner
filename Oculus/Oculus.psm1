@@ -404,16 +404,16 @@ function Get-HostDiscovery {
         [switch]$TraceRoute = $false,
 
         [Parameter(Position = 4, Mandatory = $false)]
-        [string]$OutputAll,
+        [switch]$OutputAll,
 
         [Parameter(Position = 5, Mandatory = $false)]
-        [string]$OutTxt,
+        [switch]$OutTxt,
 
         [Parameter(Position =6, Mandatory = $false)]
-        [string]$OutCsv,
+        [switch]$OutCsv,
 
         [Parameter(Position = 7, Mandatory = $false)]
-        [string]$OutXml,
+        [switch]$OutXml,
 
         [Parameter(Position = 8, Mandatory = $false)]
         [Int32]$Timeout = 1000,
@@ -608,31 +608,36 @@ function Get-HostDiscovery {
             $report
 
             if ($PSBoundParameters.ContainsKey("OutputAll")) {
-                if (-not (Test-Path $OutputAll)) {
-                    New-Item -Path $OutputAll -ItemType File -Force | Out-Null
-                }
-                $report | Out-File -FilePath $OutputAll -Encoding UTF8 -Append
-                $resultItem | Export-Csv -Path "${OutputAll}.csv" -Encoding UTF8 -NoTypeInformation -Append
-                $resultItem | Export-Clixml -Path "${OutputAll}.xml" -Append
+                $userDocuments = [Environment]::GetFolderPath('MyDocuments')
+            
+                $outputPathAll = Join-Path -Path $userDocuments -ChildPath "OutputAll.txt"
+                $outputPathCsv = Join-Path -Path $userDocuments -ChildPath "OutputAll.csv"
+                $outputPathXml = Join-Path -Path $userDocuments -ChildPath "OutputAll.xml"
+            
+                $report | Out-File -FilePath $outputPathAll -Encoding UTF8 -Append
+                $resultItem | Export-Csv -Path $outputPathCsv -Encoding UTF8 -NoTypeInformation
+                $resultItem | Export-Clixml -Path $outputPathXml
             }
-    
+            
             if ($PSBoundParameters.ContainsKey("OutTxt")) {
-                if (-not (Test-Path $OutTxt)) {
-                    New-Item -Path $OutTxt -ItemType File -Force | Out-Null
-                }
-                $report | Out-File -FilePath $OutTxt -Encoding UTF8 -Append
+                $userDocuments = [Environment]::GetFolderPath('MyDocuments')
+                $outputPathTxt = Join-Path -Path $userDocuments -ChildPath "OutTxt.txt"
+            
+                $report | Out-File -FilePath $outputPathTxt -Encoding UTF8 -Append
             }
+            
             if ($PSBoundParameters.ContainsKey("OutCsv")) {
-                if (-not (Test-Path $OutCsv)) {
-                    New-Item -Path $OutCsv -ItemType File -Force | Out-Null
-                }
-                $resultItem | Export-Csv -Path $OutCsv -Encoding UTF8 -NoTypeInformation -Append
+                $userDocuments = [Environment]::GetFolderPath('MyDocuments')
+                $outputPathCsv = Join-Path -Path $userDocuments -ChildPath "OutCsv.csv"
+            
+                $resultItem | Export-Csv -Path $outputPathCsv -Encoding UTF8 -NoTypeInformation
             }
+            
             if ($PSBoundParameters.ContainsKey("OutXml")) {
-                if (-not (Test-Path $OutXml)) {
-                    New-Item -Path $OutXml -ItemType File -Force | Out-Null
-                }
-                $resultItem | Export-Clixml -Path $OutXml -Append
+                $userDocuments = [Environment]::GetFolderPath('MyDocuments')
+                $outputPathXml = Join-Path -Path $userDocuments -ChildPath "OutXml.xml"
+            
+                $resultItem | Export-Clixml -Path $outputPathXml
             }
         }
         "Scanning done: $ipScanned IP addresses scanned."
@@ -704,11 +709,9 @@ function Get-ConnectScan{
     .EXAMPLE
          Get-ConnectScan -Target 1.1.1.35, 1.1.1.5 -Port 1,5,30
 
-    
     .EXAMPLE
          Get-ConnectScan -Target 1.1.1.10 -TopXPorts 100 -Traceroute
 
-    
     .INPUTS
         System.String
     
@@ -741,16 +744,16 @@ function Get-ConnectScan{
         [switch]$TraceRoute = $false,
 
         [Parameter(Position = 6, Mandatory = $false)]
-        [string]$OutputAll,
+        [switch]$OutputAll,
 
         [Parameter(Position = 7, Mandatory = $false)]
-        [string]$OutTxt,
+        [switch]$OutTxt,
 
         [Parameter(Position = 8, Mandatory = $false)]
-        [string]$OutCsv,
+        [switch]$OutCsv,
 
         [Parameter(Position = 9, Mandatory = $false)]
-        [string]$OutXml,
+        [switch]$OutXml,
 
         [Parameter(Position = 10, Mandatory = $false)]
         [Int32]$Timeout = 1000,
@@ -1005,31 +1008,36 @@ function Get-ConnectScan{
             $report
 
             if ($PSBoundParameters.ContainsKey("OutputAll")) {
-                if (-not (Test-Path $OutputAll)) {
-                    New-Item -Path $OutputAll -ItemType File -Force | Out-Null
-                }
-                $report | Out-File -FilePath $OutputAll -Encoding UTF8 -Append
-                $resultItem | Export-Csv -Path "${OutputAll}.csv" -Encoding UTF8 -NoTypeInformation -Append
-                $resultItem | Export-Clixml -Path "${OutputAll}.xml" -Append
+                $userDocuments = [Environment]::GetFolderPath('MyDocuments')
+            
+                $outputPathAll = Join-Path -Path $userDocuments -ChildPath "OutputAll.txt"
+                $outputPathCsv = Join-Path -Path $userDocuments -ChildPath "OutputAll.csv"
+                $outputPathXml = Join-Path -Path $userDocuments -ChildPath "OutputAll.xml"
+            
+                $report | Out-File -FilePath $outputPathAll -Encoding UTF8 -Append
+                $resultItem | Export-Csv -Path $outputPathCsv -Encoding UTF8 -NoTypeInformation
+                $resultItem | Export-Clixml -Path $outputPathXml
             }
-    
+            
             if ($PSBoundParameters.ContainsKey("OutTxt")) {
-                if (-not (Test-Path $OutTxt)) {
-                    New-Item -Path $OutTxt -ItemType File -Force | Out-Null
-                }
-                $report | Out-File -FilePath $OutTxt -Encoding UTF8 -Append
+                $userDocuments = [Environment]::GetFolderPath('MyDocuments')
+                $outputPathTxt = Join-Path -Path $userDocuments -ChildPath "OutTxt.txt"
+            
+                $report | Out-File -FilePath $outputPathTxt -Encoding UTF8 -Append
             }
+            
             if ($PSBoundParameters.ContainsKey("OutCsv")) {
-                if (-not (Test-Path $OutCsv)) {
-                    New-Item -Path $OutCsv -ItemType File -Force | Out-Null
-                }
-                $resultItem | Export-Csv -Path $OutCsv -Encoding UTF8 -NoTypeInformation -Append
+                $userDocuments = [Environment]::GetFolderPath('MyDocuments')
+                $outputPathCsv = Join-Path -Path $userDocuments -ChildPath "OutCsv.csv"
+            
+                $resultItem | Export-Csv -Path $outputPathCsv -Encoding UTF8 -NoTypeInformation
             }
+            
             if ($PSBoundParameters.ContainsKey("OutXml")) {
-                if (-not (Test-Path $OutXml)) {
-                    New-Item -Path $OutXml -ItemType File -Force | Out-Null
-                }
-                $resultItem | Export-Clixml -Path $OutXml -Append
+                $userDocuments = [Environment]::GetFolderPath('MyDocuments')
+                $outputPathXml = Join-Path -Path $userDocuments -ChildPath "OutXml.xml"
+            
+                $resultItem | Export-Clixml -Path $outputPathXml
             }
         }
         "Scanning done: $ipScanned IP addresses scanned."
