@@ -19,7 +19,7 @@ Oculus Network Scanner is PowerShell module designed for network discovery, port
 
 -PowerShell 5.1 or later
 
--Administrator privileges
+-Administrator privileges (only to install module, but there is one-liner option)
 
 
 ## Installation
