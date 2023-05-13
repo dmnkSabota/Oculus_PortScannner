@@ -549,7 +549,6 @@ function Get-HostDiscovery {
                     )
                     try{$results = Receive-Job -Job $OSjobs -Wait -AutoRemoveJob
                     }catch{
-                        continue
                     }
                     foreach ($result in $results) {
                         if ($null -ne $result) {
@@ -594,7 +593,6 @@ function Get-HostDiscovery {
         try {
             $Results = Receive-Job -Job $jobs -Wait -AutoRemoveJob
         }catch{
-            continue
         }
         
     }
@@ -786,7 +784,7 @@ function Get-ConnectScan{
     process {
         $jobs = @()
         $ipScanned = 0
-        $hostsDown
+        $hostsDown = 0
         foreach ($ip in $IPs) {
             $ipScanned++
             $portJobs = @()
@@ -943,7 +941,6 @@ function Get-ConnectScan{
                     try{
                         $results = Receive-Job -Job $OSjobs -Wait -AutoRemoveJob
                     }catch{
-                        continue
                     }
                     foreach ($result in $results) {
                         if ($null -ne $result) {
@@ -973,7 +970,6 @@ function Get-ConnectScan{
                 try {
                     $dnsEntry = [System.Net.Dns]::GetHostEntry($ip)
                 }catch{
-                    continue
                 }
                 $jobs += Start-Job -ScriptBlock {
                     param($ip, $ipResult, $dnsEntry, $OS, $ipdown, $Trace, $TraceRoute, $OSDet)
