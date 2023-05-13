@@ -547,7 +547,10 @@ function Get-HostDiscovery {
                             }
                         } -ArgumentList $ip, $commonPorts
                     )
-                    $results = Receive-Job -Job $OSjobs -Wait -AutoRemoveJob
+                    try{$results = Receive-Job -Job $OSjobs -Wait -AutoRemoveJob
+                    }catch{
+                        continue
+                    }
                     foreach ($result in $results) {
                         if ($null -ne $result) {
                             $OS += $result
@@ -588,7 +591,12 @@ function Get-HostDiscovery {
                 $ipdown++
             }
         }
-        $Results = Receive-Job -Job $jobs -Wait -AutoRemoveJob
+        try {
+            $Results = Receive-Job -Job $jobs -Wait -AutoRemoveJob
+        }catch{
+            continue
+        }
+        
     }
 
     end {
@@ -932,7 +940,11 @@ function Get-ConnectScan{
                             }
                         } -ArgumentList $ip, $commonPorts
                     )
-                    $results = Receive-Job -Job $OSjobs -Wait -AutoRemoveJob
+                    try{
+                        $results = Receive-Job -Job $OSjobs -Wait -AutoRemoveJob
+                    }catch{
+                        continue
+                    }
                     foreach ($result in $results) {
                         if ($null -ne $result) {
                             $OS += $result
@@ -987,7 +999,11 @@ function Get-ConnectScan{
                 $hostsDown++
             }            
         }
-        $IPResults = Receive-Job -Job $jobs -Wait -AutoRemoveJob
+        try {
+            $IPResults = Receive-Job -Job $jobs -Wait -AutoRemoveJob
+        }catch{
+            continue
+        }
     }            
     
     end {
