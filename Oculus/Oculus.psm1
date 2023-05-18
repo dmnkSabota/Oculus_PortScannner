@@ -15,7 +15,7 @@ function Get-TargetEnumeration {
         Get-TargetEnumeration -Target "1.1.1.1,2,5,9" 
          
     .EXAMPLE
-        Get-TargetEnumeration-Target "1.1.1.1-125"  
+        Get-TargetEnumeration -Target "1.1.1.1-125"  
 
     .EXAMPLE
         Get-TargetEnumeration -Target "1.1.1.35, 1.1.1.5"   
@@ -498,7 +498,7 @@ function Get-HostDiscovery {
                 
                         # Check for common ports
                         Start-Job -ScriptBlock {
-                            param($ip, $commonPorts, $detectedPorts, $Timeout)
+                            param($ip, $commonPorts, $Timeout)
     
                             $remainingPorts = $commonPorts.Values | ForEach-Object { $_ } | Sort-Object -Unique | Where-Object { -not ($detectedPorts -contains $_) }
                             $portResults = @()
@@ -535,17 +535,17 @@ function Get-HostDiscovery {
                                 }
                             }
         
-                            $allDetectedPorts = $detectedPorts + ($portResults | ForEach-Object { $_.Port })
+                            $allDetectedPorts = $portResults | ForEach-Object { $_.Port }
     
                             if ($allDetectedPorts) {
                                 $osEstimations = @{}
                                 foreach ($os in $commonPorts.Keys) {
-                                    $osEstimations[$os] = ($commonPorts[$os] | Where-Object { $detectedPorts -contains $_ }).Count
+                                    $osEstimations[$os] = ($commonPorts[$os] | Where-Object { $allDetectedPorts -contains $_ }).Count
                                 }
                                 $detectedOS = $osEstimations.Keys | Sort-Object { $osEstimations[$_] } -Descending | Select-Object -First 1
                                 return $detectedOS
                             }
-                        } -ArgumentList $ip, $commonPorts
+                        } -ArgumentList $ip, $commonPorts, $Timeout
                     )
                     try{$results = Receive-Job -Job $OSjobs -Wait -AutoRemoveJob
                     }catch{
