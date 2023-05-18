@@ -436,8 +436,7 @@ function Get-HostDiscovery {
         foreach ($ip in $IPs) {
             $ipScanned++
             while ($jobs.Count -ge $Threads) {
-                $completedJob = Receive-Job -Job $jobs -Wait -AutoRemoveJob
-                $completedJob
+                Receive-Job -Job $jobs -Wait -AutoRemoveJob
                 $jobs = $jobs | Where-Object { $_.State -ne 'Completed' }
             }
 
@@ -504,33 +503,23 @@ function Get-HostDiscovery {
                             $portResults = @()
     
                             foreach ($port in $remainingPorts) {
-                                if ($ip -match '^([0-9A-Fa-f]{0,4}:){1,7}[0-9A-Fa-f]{0,4}(/(\d{1,2}))?$'){
-                                    $result =  Test-NetConnection -ComputerName $ip -Port $port -WarningAction SilentlyContinue 
-                                    if ($result.TcpTestSucceeded) {
-                                        $portResults += @{
-                                            'Port' = $port
-                                            'Status' = "Open"
-                                        }
-                                    } 
-                                }else{
-                                    $tcpClient = New-Object System.Net.Sockets.TcpClient
-                                    $addresses = [System.Net.Dns]::GetHostAddresses($ip)
-                                    foreach ($address in $addresses) {
-                                        try {
-                                            $connect = $tcpClient.BeginConnect($address, $port, $null, $null)
-                                            $waitResult = $connect.AsyncWaitHandle.WaitOne($Timeout, $false)
-                                
-                                            if ($waitResult) {
-                                                $portResults += @{
-                                                    'Port'   = $port
-                                                    'Status' = "Open"
-                                                }
-                                                $tcpClient.Close()
-                                                break
+                                $addresses = [System.Net.Dns]::GetHostAddresses($ip)
+                                foreach ($address in $addresses) {
+                                    try {
+                                        $socket = New-Object System.Net.Sockets.Socket $address.AddressFamily, 'Stream', 'Tcp'
+                                        $asyncResult = $socket.BeginConnect($address, $port, $null, $null)
+                                        $waitResult = $asyncResult.AsyncWaitHandle.WaitOne($Timeout, $false)
+
+                                        if ($waitResult) {
+                                            $portResults += @{
+                                                'Port'   = $port
+                                                'Status' = "Open"
                                             }
-                                        } catch {
-                                            continue
+                                            $socket.Close()
+                                            break
                                         }
+                                    } catch {
+                                        continue
                                     }
                                 }
                             }
@@ -792,8 +781,7 @@ function Get-ConnectScan{
             $OS = $null
 
             while ($jobs.Count -ge $Threads) {
-                $completedJob = Receive-Job -Job $jobs -Wait -AutoRemoveJob
-                $completedJob
+                Receive-Job -Job $jobs -Wait -AutoRemoveJob
                 $jobs = $jobs | Where-Object { $_.State -ne 'Completed' }
             }
 
@@ -807,34 +795,24 @@ function Get-ConnectScan{
                 foreach ($num in $Port) {
                     $portJobs += Start-Job -ScriptBlock {
                         param($ip, $num, $Timeout)
-                        if ($ip -match '^([0-9A-Fa-f]{0,4}:){1,7}[0-9A-Fa-f]{0,4}(/(\d{1,2}))?$'){
-                            $result =  Test-NetConnection -ComputerName $ip -Port $num -WarningAction SilentlyContinue 
-                            if ($result.TcpTestSucceeded) {
-                                @{
-                                    'Port' = $num
-                                    'Status' = "Open"
-                                }
-                            } 
-                        }else{
-                            $tcpClient = New-Object System.Net.Sockets.TcpClient
-                            $addresses = [System.Net.Dns]::GetHostAddresses($ip)
-                            foreach ($address in $addresses) {
-                                try {
-                                    $connect = $tcpClient.BeginConnect($address, $num, $null, $null)
-                                    $waitResult = $connect.AsyncWaitHandle.WaitOne($Timeout, $false)
-                                    if ($waitResult) {
-                                        @{
-                                            'Port'   = $num
-                                            'Status' = "Open"
-                                        }
-                                        $tcpClient.Close()
-                                        break
+                        $addresses = [System.Net.Dns]::GetHostAddresses($ip)
+                        foreach ($address in $addresses) {
+                            try {
+                                $socket = New-Object System.Net.Sockets.Socket $address.AddressFamily, 'Stream', 'Tcp'
+                                $asyncResult = $socket.BeginConnect($address, $num, $null, $null)
+                                $waitResult = $asyncResult.AsyncWaitHandle.WaitOne($Timeout, $false)
+
+                                if ($waitResult) {
+                                    @{
+                                        'Port'   = $num
+                                        'Status' = "Open"
                                     }
-                                } catch {
-                                    continue
+                                    $socket.Close()
+                                    break
                                 }
+                            } catch {
+                                continue
                             }
-                        
                         }
                     } -ArgumentList $ip, $num, $Timeout
                     
@@ -893,33 +871,23 @@ function Get-ConnectScan{
                             $portResults = @()
     
                             foreach ($port in $remainingPorts) {
-                                if ($ip -match '^([0-9A-Fa-f]{0,4}:){1,7}[0-9A-Fa-f]{0,4}(/(\d{1,2}))?$'){
-                                    $result =  Test-NetConnection -ComputerName $ip -Port $port -WarningAction SilentlyContinue 
-                                    if ($result.TcpTestSucceeded) {
-                                        $portResults += @{
-                                            'Port' = $port
-                                            'Status' = "Open"
-                                        }
-                                    } 
-                                }else{
-                                    $tcpClient = New-Object System.Net.Sockets.TcpClient
-                                    $addresses = [System.Net.Dns]::GetHostAddresses($ip)
-                                    foreach ($address in $addresses) {
-                                        try {
-                                            $connect = $tcpClient.BeginConnect($address, $port, $null, $null)
-                                            $waitResult = $connect.AsyncWaitHandle.WaitOne($Timeout, $false)
-                                
-                                            if ($waitResult) {
-                                                $portResults += @{
-                                                    'Port'   = $port
-                                                    'Status' = "Open"
-                                                }
-                                                $tcpClient.Close()
-                                                break
+                                $addresses = [System.Net.Dns]::GetHostAddresses($ip)
+                                foreach ($address in $addresses) {
+                                    try {
+                                        $socket = New-Object System.Net.Sockets.Socket $address.AddressFamily, 'Stream', 'Tcp'
+                                        $asyncResult = $socket.BeginConnect($address, $port, $null, $null)
+                                        $waitResult = $asyncResult.AsyncWaitHandle.WaitOne($Timeout, $false)
+
+                                        if ($waitResult) {
+                                            $portResults += @{
+                                                'Port'   = $port
+                                                'Status' = "Open"
                                             }
-                                        } catch {
-                                            continue
+                                            $socket.Close()
+                                            break
                                         }
+                                    } catch {
+                                        continue
                                     }
                                 }
                             }
