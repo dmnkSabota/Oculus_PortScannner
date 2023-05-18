@@ -456,12 +456,12 @@ function Get-HostDiscovery {
                 $Trace = $null
                 if ($TraceRoute) {
                     $traceJob = Start-Job -ScriptBlock {
-                        param($ip, $Timeout)
+                        param($ip)
                         $TraceResult = Test-NetConnection -ComputerName $ip -TraceRoute -WarningAction SilentlyContinue
                         $traceRoute = $TraceResult.TraceRoute | Where-Object { $_.ToString() -ne '::' } | ForEach-Object { $_.ToString() }
                         $traceString = $traceRoute -join ' -> '
                         return $traceString
-                    } -ArgumentList $ip, $Timeout
+                    } -ArgumentList $ip
                     $Trace = Receive-Job -Job $traceJob -Wait
                 }
 
@@ -476,14 +476,14 @@ function Get-HostDiscovery {
                     $OSjobs = @(
                         # Check for HTTP header information
                         Start-Job -ScriptBlock {
-                            param($ip)
+                            param($ip, $Timeout)
                             try {
-                                $HTTPHeader = (Invoke-WebRequest -Uri "http://$ip" -TimeoutSec 5 -UseBasicParsing -ErrorAction Stop).Headers["Server"]
+                                $HTTPHeader = (Invoke-WebRequest -Uri "http://$ip" -TimeoutSec ($Timeout/1000) -UseBasicParsing -ErrorAction Stop).Headers["Server"]
                                 if ($HTTPHeader) {
                                     return [regex]::Match($HTTPHeader, '\((.*?)\)').Groups[1].Value
                                 }
                             } catch {}
-                        } -ArgumentList $ip
+                        } -ArgumentList $ip, $Timeout
                 
                         # Check for DNS TXT records
                         Start-Job -ScriptBlock {
@@ -798,7 +798,7 @@ function Get-ConnectScan{
             }
 
             if(-not $PSBoundParameters.ContainsKey("NoPing")){
-                $ping = Test-Connection -ComputerName $ip -Count 1 -Quiet
+                $ping = Test-Connection -ComputerName $ip -Count 1 -Quiet -Delay ($Timeout/1000)
             }else{
                 $ping = $true
             }
@@ -808,7 +808,7 @@ function Get-ConnectScan{
                     $portJobs += Start-Job -ScriptBlock {
                         param($ip, $num, $Timeout)
                         if ($ip -match '^([0-9A-Fa-f]{0,4}:){1,7}[0-9A-Fa-f]{0,4}(/(\d{1,2}))?$'){
-                            $result =  Test-NetConnection -ComputerName $ip -Port $num -WarningAction SilentlyContinue #pinging IP address
+                            $result =  Test-NetConnection -ComputerName $ip -Port $num -WarningAction SilentlyContinue 
                             if ($result.TcpTestSucceeded) {
                                 @{
                                     'Port' = $num
@@ -845,17 +845,15 @@ function Get-ConnectScan{
 
                 if ($TraceRoute) {
                     $traceJob = Start-Job -ScriptBlock {
-                        param($ip, $Timeout)
+                        param($ip)
                         $TraceResult = Test-NetConnection -ComputerName $ip -TraceRoute -WarningAction SilentlyContinue
                         $traceRoute = $TraceResult.TraceRoute | Where-Object { $_.ToString() -ne '::' } | ForEach-Object { $_.ToString() }
                         $traceString = $traceRoute -join ' -> '
                         return $traceString
-                    } -ArgumentList $ip, $Timeout
+                    } -ArgumentList $ip
+                    $Trace = Receive-Job -Job $traceJob -Wait  
                 }
-        
-                if ($TraceRoute) {
-                    $Trace = Receive-Job -Job $traceJob -Wait    
-                }
+
     
                 if ($OSDet) {
                     $OS = @()
@@ -867,14 +865,14 @@ function Get-ConnectScan{
                     $OSjobs = @(
                         # Check for HTTP header information
                         Start-Job -ScriptBlock {
-                            param($ip)
+                            param($ip, $Timeout)
                             try {
-                                $HTTPHeader = (Invoke-WebRequest -Uri "http://$ip" -TimeoutSec 5 -UseBasicParsing -ErrorAction Stop).Headers["Server"]
+                                $HTTPHeader = (Invoke-WebRequest -Uri "http://$ip" -TimeoutSec ($Timeout/1000) -UseBasicParsing -ErrorAction Stop).Headers["Server"]
                                 if ($HTTPHeader) {
                                     return [regex]::Match($HTTPHeader, '\((.*?)\)').Groups[1].Value
                                 }
                             } catch {}
-                        } -ArgumentList $ip
+                        } -ArgumentList $ip, $Timeout
                 
                         # Check for DNS TXT records
                         Start-Job -ScriptBlock {
