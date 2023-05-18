@@ -469,8 +469,8 @@ function Get-HostDiscovery {
                 if ($OSDet) {
                     $OS = @()
                     $commonPorts = @{
-                        'Linux/Unix/BSD' = @(22, 25, 80, 443, 3306, 5432, 548, 631, 8000);
-                        'Windows' = @(80, 443, 445, 3389, 1433);
+                        'Linux/Unix/BSD' = @(22, 25, 80, 443, 3306, 5432, 548, 631, 8000)
+                        'Windows' = @(80, 443, 445, 3389, 1433)
                     }
                 
                     $OSjobs = @(
@@ -858,8 +858,8 @@ function Get-ConnectScan{
                 if ($OSDet) {
                     $OS = @()
                     $commonPorts = @{
-                        'Linux/Unix/BSD' = @(22, 25, 80, 443, 3306, 5432, 548, 631, 8000);
-                        'Windows' = @(80, 443, 445, 3389, 1433);
+                        'Linux/Unix/BSD' = @(22, 25, 80, 443, 3306, 5432, 548, 631, 8000)
+                        'Windows' = @(80, 443, 445, 3389, 1433)
                     }
                 
                     $OSjobs = @(
